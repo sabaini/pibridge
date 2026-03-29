@@ -150,7 +150,7 @@ If Pi emits an `extension_ui_request`, the client raises `PiUnsupportedFeatureEr
 
 ```bash
 . .venv/bin/activate
-pytest
+pytest -m 'not integration'
 ruff check .
 mypy src
 python -m build
@@ -158,20 +158,19 @@ python -m build
 
 ### Integration tests
 
-Integration tests are opt-in and run a real `pi --mode rpc` subprocess.
+Integration tests run a real `pi --mode rpc` subprocess.
 
 By default, the suite loads a bundled test-only extension at `tests/integration/fixtures/mock_provider.ts` and switches to a canned-response mock model after startup, so external model credentials are **not** required.
 
 Default requirements:
 
 - `pi` on `PATH`
-- `PI_RPC_INTEGRATION=1`
 
 Run them with:
 
 ```bash
 . .venv/bin/activate
-PI_RPC_INTEGRATION=1 pytest -m integration
+pytest -m integration
 ```
 
 Optional live-backend override:

@@ -31,8 +31,6 @@ def _live_override_enabled() -> bool:
 
 
 def _integration_ready() -> tuple[bool, str]:
-    if os.environ.get("PI_RPC_INTEGRATION") != "1":
-        return False, "set PI_RPC_INTEGRATION=1 to run real pi integration tests"
     if shutil.which("pi") is None:
         return False, "pi executable not found on PATH"
     if not MOCK_EXTENSION_PATH.exists():
