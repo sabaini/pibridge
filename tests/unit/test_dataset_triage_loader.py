@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 from io import BytesIO
 
 import pytest
@@ -27,6 +28,14 @@ class FakeUpload(BytesIO):
     ("factory", "expected_name"),
     [
         (lambda: FakeUpload(b"customer_id,email\n1,a@example.com\n2,b@example.com\n"), "customers.csv"),
+        (
+            lambda: FakeUpload(
+                gzip.compress(b"customer_id,email\n1,a@example.com\n2,b@example.com\n"),
+                name="customers.csv.gz",
+                content_type="application/gzip",
+            ),
+            "customers.csv.gz",
+        ),
         (lambda: b"customer_id,email\n1,a@example.com\n2,b@example.com\n", None),
     ],
 )
@@ -52,11 +61,18 @@ def test_load_csv_rejects_malformed_csv() -> None:
         loader.load_csv(FakeUpload(broken_csv, name="broken.csv"))
 
 
+def test_load_csv_rejects_invalid_gzip_uploads() -> None:
+    with pytest.raises(models.DatasetLoadError, match="decompressed"):
+        loader.load_csv(FakeUpload(b"\x1f\x8bnot-really-gzip", name="broken.csv.gz", content_type="application/gzip"))
+
+
 def test_load_csv_fingerprint_is_stable_for_matching_content() -> None:
     first = loader.load_csv(FakeUpload(b"customer_id,email\n1,a@example.com\n", name="first.csv"))
     second = loader.load_csv(FakeUpload(b"customer_id,email\n1,a@example.com\n", name="second.csv"))
+    gzipped = loader.load_csv(FakeUpload(gzip.compress(b"customer_id,email\n1,a@example.com\n"), name="second.csv.gz", content_type="application/gzip"))
     changed = loader.load_csv(FakeUpload(b"customer_id,email\n1,updated@example.com\n", name="changed.csv"))
 
     assert first.upload.fingerprint == second.upload.fingerprint
+    assert first.upload.fingerprint == gzipped.upload.fingerprint
     assert first.upload.fingerprint != changed.upload.fingerprint
     assert first.upload.size_bytes == second.upload.size_bytes

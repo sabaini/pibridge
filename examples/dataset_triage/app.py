@@ -24,10 +24,10 @@ PREVIEW_ROWS = 20
 def main() -> None:
     st.set_page_config(page_title="Dataset Triage Assistant", layout="wide")
     st.title("Dataset Triage Assistant")
-    st.caption("Profile a CSV locally with pandas, then ask Pi for a streamed triage summary and follow-up guidance.")
+    st.caption("Profile a CSV or CSV.gz locally with pandas, then ask Pi for a streamed triage summary and follow-up guidance.")
 
     state = _state()
-    uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
+    uploaded_file = st.file_uploader("Upload a CSV or CSV.gz file", type=["csv", "gz"])
 
     left, right = st.columns((3, 2))
     with right:
@@ -49,7 +49,7 @@ def main() -> None:
         st.error(state["analysis_error"])
 
     if loaded_dataset is None or dataset_profile is None:
-        st.warning("Upload a CSV to preview its contents, inspect a compact profile, and ask Pi for cleanup advice.")
+        st.warning("Upload a CSV or CSV.gz file to preview its contents, inspect a compact profile, and ask Pi for cleanup advice.")
         return
 
     preview_col, profile_col = st.columns((3, 2))

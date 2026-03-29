@@ -1,6 +1,6 @@
 # Dataset Triage Assistant
 
-A small Streamlit app that profiles an uploaded CSV locally with `pandas`, sends a compact summary to Pi through `pi-rpc-python`, streams Pi's analysis back into the UI, and keeps follow-up questions in the same Pi session.
+A small Streamlit app that profiles an uploaded CSV or gzipped CSV (`.csv.gz`) locally with `pandas`, sends a compact summary to Pi through `pi-rpc-python`, streams Pi's analysis back into the UI, and keeps follow-up questions in the same Pi session.
 
 ## Prerequisites
 
@@ -41,11 +41,11 @@ Equivalent direct command after manual setup:
 streamlit run examples/dataset_triage/app.py
 ```
 
-Then upload a CSV such as `examples/dataset_triage/sample_data/customers.csv`.
+Then upload a CSV such as `examples/dataset_triage/sample_data/customers.csv`, or a gzipped CSV (`.csv.gz`).
 
 ## Happy path
 
-1. Upload a CSV file.
+1. Upload a CSV or CSV.gz file.
 2. Review the preview and compact profile summary.
 3. Click **Analyze with Pi** to start a fresh dataset-scoped Pi session.
 4. Watch the response stream into the UI.
@@ -65,7 +65,7 @@ The app does **not** send the full raw dataset by default. It sends a bounded su
 
 ## Known limits
 
-- CSV only; no Excel, Parquet, or database sources in the MVP
+- CSV and gzip-compressed CSV (`.csv.gz`) only; no Excel, Parquet, or database sources in the MVP
 - Heuristics are intentionally lightweight and explainable, not statistically exhaustive
 - Very large CSVs may be slow to load locally in Streamlit
 - If Pi is unavailable or misconfigured, the app shows a friendly error and allows retrying
