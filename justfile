@@ -2,9 +2,9 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
 python_cmd := "if [[ -x .venv/bin/python ]]; then echo .venv/bin/python; elif command -v python3 >/dev/null 2>&1; then echo python3; else echo python; fi"
 
-ruff_cmd := "if [[ -x .venv/bin/ruff ]]; then echo .venv/bin/ruff; else echo ruff; fi"
+bootstrap_python_cmd := "if command -v python3 >/dev/null 2>&1; then echo python3; else echo python; fi"
 
-streamlit_cmd := "if [[ -x .venv/bin/streamlit ]]; then echo .venv/bin/streamlit; else echo streamlit; fi"
+ruff_cmd := "if [[ -x .venv/bin/ruff ]]; then echo .venv/bin/ruff; else echo ruff; fi"
 
 default:
     @just --list
@@ -34,7 +34,12 @@ check-all: check test-integration
 clean:
     rm -rf build dist .pytest_cache .ruff_cache .mypy_cache
 
-dataset-triage:
-    "$({{streamlit_cmd}})" run examples/dataset_triage/app.py
+dataset-triage-setup:
+    if [[ ! -x .venv/bin/python ]]; then "$({{bootstrap_python_cmd}})" -m venv .venv; fi
+    if ! .venv/bin/python -m pip --version >/dev/null 2>&1; then .venv/bin/python -m ensurepip --upgrade; fi
+    if [[ ! -f .venv/.dataset-triage-ready || pyproject.toml -nt .venv/.dataset-triage-ready ]]; then .venv/bin/python -m pip install -e '.[examples]' && touch .venv/.dataset-triage-ready; fi
+
+dataset-triage: dataset-triage-setup
+    .venv/bin/python -m streamlit run examples/dataset_triage/app.py
 
 dataset_triage: dataset-triage

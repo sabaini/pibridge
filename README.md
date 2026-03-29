@@ -193,7 +193,7 @@ If the environment is not configured, the integration suite skips clearly.
 - `examples/basic_prompt.py`
 - `examples/session_flow.py`
 - `examples/bash_then_prompt.py`
-- `examples/dataset_triage/` - Streamlit CSV triage assistant with deterministic pandas profiling and Pi follow-ups (`just dataset-triage`)
+- `examples/dataset_triage/` - Streamlit CSV triage assistant with deterministic pandas profiling and Pi follow-ups (`just dataset-triage` bootstraps `.venv` and installs `.[examples]`)
 
 ## Current limits
 

@@ -10,7 +10,15 @@ A small Streamlit app that profiles an uploaded CSV locally with `pandas`, sends
 
 ## Install
 
-From the repository root:
+From the repository root, the simplest option is:
+
+```bash
+just dataset-triage
+```
+
+That command creates `.venv` if needed, installs `.[examples]`, and launches the app.
+
+If you prefer to set things up manually:
 
 ```bash
 python -m venv .venv
@@ -23,13 +31,13 @@ If you are also doing repository development, install `.[dev,examples]` instead.
 ## Run
 
 ```bash
-. .venv/bin/activate
 just dataset-triage
 ```
 
-Equivalent direct command:
+Equivalent direct command after manual setup:
 
 ```bash
+. .venv/bin/activate
 streamlit run examples/dataset_triage/app.py
 ```
 
