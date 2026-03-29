@@ -73,6 +73,8 @@ pi --mode rpc [options]
 
 Relevant documented startup options include `--provider`, `--model`, `--no-session`, and `--session-dir`. ([GitHub][1])
 
+The Python wrapper may also accept host-side `cwd`/`env` options for subprocess launch, but `env` should behave as an overlay on top of the inherited environment rather than forcing callers to reconstruct `PATH`, auth variables, and other ambient process state manually.
+
 Lifecycle:
 
 * import does nothing
@@ -205,7 +207,7 @@ subscription = client.subscribe_events(maxsize=1000)
 event = subscription.get(timeout=5)
 ```
 
-Each subscription has its own bounded queue.
+Each subscription has its own bounded queue, and `get(timeout=None)` must still wake promptly if the subscription is closed, fails, or overflows.
 
 ### Overflow policy
 
@@ -266,6 +268,7 @@ Error handling has two layers.
 * malformed JSON / invalid stream / transport junk → `PiProtocolError`
 * subprocess exit / broken pipe → `PiProcessExitedError`
 * timeout waiting for a response → `PiTimeoutError`
+* if a caller times out locally and Pi later emits that response anyway, the late response should be discarded rather than treated as a fatal protocol error
 
 The protocol itself models failed commands as normal response objects with `success: false`, and parse failures also come back as response objects. ([GitHub][1])
 

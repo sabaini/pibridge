@@ -72,6 +72,7 @@ Important lifecycle rules:
 - importing the package does nothing
 - constructing `PiClient()` does not start Pi
 - the first command starts `pi --mode rpc`
+- `PiClientOptions.env` overlays the current process environment instead of replacing it wholesale
 - `close()` or context-manager exit shuts the subprocess down
 - if Pi exits while idle, the next command starts a fresh subprocess
 - if Pi exits during an active workflow, subscribers receive an error and the active run is not replayed
@@ -102,6 +103,8 @@ Subscribe with a bounded queue:
 subscription = client.subscribe_events(maxsize=1000)
 event = subscription.get(timeout=5)
 ```
+
+`subscription.get()` also wakes correctly in the default blocking mode: if the client closes, the stream fails, or the subscriber overflows, the blocked caller is released and sees the corresponding exception instead of hanging forever.
 
 Overflow behavior is explicit:
 

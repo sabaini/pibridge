@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import threading
 import time
@@ -167,6 +168,102 @@ def test_process_times_out_and_cleans_pending_request() -> None:
     process._ensure_started_locked()  # type: ignore[attr-defined]
     with pytest.raises(PiTimeoutError):
         process.send_command(make_command("get_state"), timeout=0.01)
+
+
+def test_process_overlays_child_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PI_RPC_TEST_INHERITED", "base")
+    captured_env: dict[str, str] = {}
+
+    def factory(*args: Any, **kwargs: Any) -> FakeChildProcess:
+        child = FakeChildProcess()
+        env = kwargs["env"]
+        assert isinstance(env, dict)
+        captured_env.update(env)
+        child.on_command = lambda payload: child.send_record(
+            {
+                "id": payload["id"],
+                "type": "response",
+                "command": payload["type"],
+                "success": True,
+                "data": {
+                    "model": None,
+                    "thinkingLevel": "medium",
+                    "isStreaming": False,
+                    "isCompacting": False,
+                    "steeringMode": "all",
+                    "followUpMode": "one-at-a-time",
+                    "sessionId": "env-test",
+                    "autoCompactionEnabled": True,
+                    "messageCount": 0,
+                    "pendingMessageCount": 0,
+                },
+            }
+        )
+        return child
+
+    process = PiProcess(
+        PiClientOptions(
+            process_factory=factory,
+            command_timeout=0.2,
+            idle_timeout=None,
+            env={"PI_RPC_TEST_INHERITED": "override", "PI_RPC_TEST_EXTRA": "extra"},
+        )
+    )
+
+    process.send_command(make_command("get_state"))
+
+    assert captured_env["PI_RPC_TEST_INHERITED"] == "override"
+    assert captured_env["PI_RPC_TEST_EXTRA"] == "extra"
+    assert captured_env["PATH"] == os.environ["PATH"]
+
+
+def test_late_response_after_timeout_does_not_poison_client() -> None:
+    children: list[FakeChildProcess] = []
+    process = make_process(children)
+    process._ensure_started_locked()  # type: ignore[attr-defined]
+    child = children[0]
+    timed_out_request_id: str | None = None
+
+    def state_response(request_id: str, session_id: str) -> dict[str, Any]:
+        return {
+            "id": request_id,
+            "type": "response",
+            "command": "get_state",
+            "success": True,
+            "data": {
+                "model": None,
+                "thinkingLevel": "medium",
+                "isStreaming": False,
+                "isCompacting": False,
+                "steeringMode": "all",
+                "followUpMode": "one-at-a-time",
+                "sessionId": session_id,
+                "autoCompactionEnabled": True,
+                "messageCount": 0,
+                "pendingMessageCount": 0,
+            },
+        }
+
+    def on_command(payload: dict[str, Any]) -> None:
+        nonlocal timed_out_request_id
+        if timed_out_request_id is None:
+            timed_out_request_id = payload["id"]
+            return
+        child.send_record(state_response(payload["id"], "second"))
+
+    child.on_command = on_command
+
+    with pytest.raises(PiTimeoutError):
+        process.send_command(make_command("get_state"), timeout=0.01)
+
+    assert timed_out_request_id is not None
+    child.send_record(state_response(timed_out_request_id, "late"))
+    time.sleep(0.05)
+
+    response = process.send_command(make_command("get_state"))
+
+    assert response.command == "get_state"
+    assert response.data.session_id == "second"
 
 
 def test_process_restarts_after_idle_exit() -> None:

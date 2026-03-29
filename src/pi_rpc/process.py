@@ -35,6 +35,7 @@ class PendingRequestRegistry:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._pending: dict[str, _PendingRequest] = {}
+        self._abandoned: set[str] = set()
 
     def add(self, command: RpcCommand) -> _PendingRequest:
         if command.id is None:
@@ -44,14 +45,17 @@ class PendingRequestRegistry:
             self._pending[command.id] = pending
         return pending
 
-    def fulfill(self, request_id: str, response: RpcResponse[Any]) -> bool:
+    def fulfill(self, request_id: str, response: RpcResponse[Any]) -> str:
         with self._lock:
+            if request_id in self._abandoned:
+                self._abandoned.remove(request_id)
+                return "abandoned"
             pending = self._pending.pop(request_id, None)
         if pending is None:
-            return False
+            return "missing"
         pending.response = response
         pending.ready.set()
-        return True
+        return "fulfilled"
 
     def fail(self, request_id: str, error: BaseException) -> bool:
         with self._lock:
@@ -66,6 +70,12 @@ class PendingRequestRegistry:
         with self._lock:
             self._pending.pop(request_id, None)
 
+    def abandon(self, request_id: str) -> None:
+        with self._lock:
+            pending = self._pending.pop(request_id, None)
+            if pending is not None:
+                self._abandoned.add(request_id)
+
     def fail_all(self, error: BaseException) -> None:
         with self._lock:
             items = list(self._pending.values())
@@ -73,6 +83,10 @@ class PendingRequestRegistry:
         for pending in items:
             pending.error = error
             pending.ready.set()
+
+    def clear_abandoned(self) -> None:
+        with self._lock:
+            self._abandoned.clear()
 
 
 class PiProcess:
@@ -132,7 +146,7 @@ class PiProcess:
                 self._pending.cancel(command.id or "")
                 raise
         if not pending.ready.wait(timeout):
-            self._pending.cancel(command.id or "")
+            self._pending.abandon(command.id or "")
             if command.type == "prompt":
                 with self._lock:
                     self._active_workflow = False
@@ -178,6 +192,7 @@ class PiProcess:
         self._jsonl_reader = JsonlReader()
         self._stream_failure = None
         self._restartable_idle_failure = False
+        self._pending.clear_abandoned()
         argv = self._build_argv()
         factory: Callable[..., Any] = self._options.process_factory or subprocess.Popen
         try:
@@ -269,7 +284,10 @@ class PiProcess:
             response = parse_response(payload)
             if response.request_id is None:
                 raise PiProtocolError("Received response without an id")
-            if not self._pending.fulfill(response.request_id, response):
+            fulfillment = self._pending.fulfill(response.request_id, response)
+            if fulfillment == "abandoned":
+                return
+            if fulfillment == "missing":
                 raise PiProtocolError(f"Received response for unknown request id: {response.request_id}")
             return
         if record_type == "extension_ui_request":

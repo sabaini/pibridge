@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import queue
 import threading
+import time
+from collections import deque
 from typing import Generic, TypeVar
 
 from .exceptions import PiProtocolError, PiSubscriptionOverflowError
@@ -13,56 +15,62 @@ class EventSubscription(Generic[T]):
     def __init__(self, maxsize: int = 1000) -> None:
         if maxsize <= 0:
             raise ValueError("maxsize must be positive")
-        self._queue: queue.Queue[T] = queue.Queue(maxsize=maxsize)
-        self._lock = threading.Lock()
+        self._maxsize = maxsize
+        self._items: deque[T] = deque()
+        self._condition = threading.Condition()
         self._closed = False
         self._error: BaseException | None = None
 
     @property
     def closed(self) -> bool:
-        with self._lock:
+        with self._condition:
             return self._closed
 
     def publish(self, item: T) -> None:
-        with self._lock:
+        with self._condition:
             if self._closed or self._error is not None:
                 return
-            try:
-                self._queue.put_nowait(item)
-            except queue.Full:
+            if len(self._items) >= self._maxsize:
                 self._error = PiSubscriptionOverflowError("event subscription queue overflowed")
                 self._closed = True
+                self._condition.notify_all()
+                return
+            self._items.append(item)
+            self._condition.notify()
 
     def fail(self, error: BaseException) -> None:
-        with self._lock:
+        with self._condition:
             if self._error is None:
                 self._error = error
             self._closed = True
+            self._condition.notify_all()
 
     def close(self) -> None:
-        with self._lock:
+        with self._condition:
             self._closed = True
+            self._condition.notify_all()
 
     def get(self, timeout: float | None = None) -> T:
-        try:
-            item = self._queue.get(timeout=timeout)
-        except queue.Empty as exc:
-            error = self._error
-            if error is not None:
-                raise error from exc
-            if self.closed:
-                raise PiProtocolError("subscription is closed") from exc
-            raise
-        return item
+        if timeout is not None and timeout < 0:
+            raise ValueError("'timeout' must be a non-negative number")
+        deadline = None if timeout is None else time.monotonic() + timeout
+        with self._condition:
+            while not self._items:
+                if self._error is not None:
+                    raise self._error
+                if self._closed:
+                    raise PiProtocolError("subscription is closed")
+                remaining = None if deadline is None else deadline - time.monotonic()
+                if remaining is not None and remaining <= 0:
+                    raise queue.Empty
+                self._condition.wait(timeout=remaining)
+            return self._items.popleft()
 
     def drain(self) -> list[T]:
-        items: list[T] = []
-        while True:
-            try:
-                items.append(self._queue.get_nowait())
-            except queue.Empty:
-                break
-        return items
+        with self._condition:
+            items = list(self._items)
+            self._items.clear()
+            return items
 
 
 class SubscriptionHub(Generic[T]):

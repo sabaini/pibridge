@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -102,4 +103,8 @@ class PiClientOptions:
     auto_close_subscriptions: bool = True
 
     def build_env(self) -> dict[str, str] | None:
-        return dict(self.env) if self.env is not None else None
+        if self.env is None:
+            return None
+        env = dict(os.environ)
+        env.update(self.env)
+        return env
