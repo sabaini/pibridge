@@ -45,7 +45,7 @@ with PiClient(options) as client:
             break
 ```
 
-See `examples/` for more runnable samples.
+See `examples/` for more runnable samples, including the Streamlit dataset triage assistant in `examples/dataset_triage/`.
 
 ## API overview
 
@@ -189,6 +189,7 @@ If the environment is not configured, the integration suite skips clearly.
 - `examples/basic_prompt.py`
 - `examples/session_flow.py`
 - `examples/bash_then_prompt.py`
+- `examples/dataset_triage/` - Streamlit CSV triage assistant with deterministic pandas profiling and Pi follow-ups
 
 ## Current limits
 

@@ -1,0 +1,7 @@
+customer_id,email,country,status,score,signup_date,order_ref,notes
+C001,alice@example.com,US,active,10,2024-01-01,ORD-1001,VIP account
+C002,,us,active,11,2024/01/02,ORD-1002,
+C003,,United States,active,9,01-03-2024,ORD-1003,Needs review
+C004,,US,active,10,2024-01-04,ORD-1004,
+C005,eve@example.com,,active,9999,2024-01-05,ORD-1005,Outlier score
+C005,eve@example.com,,active,9999,2024-01-05,ORD-1005,Outlier score
