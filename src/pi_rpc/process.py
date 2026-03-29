@@ -103,6 +103,7 @@ class PiProcess:
         self._subscriptions: SubscriptionHub[AgentEvent] = SubscriptionHub()
         self._closed = False
         self._active_workflow = False
+        self._pending_workflow_start_id: str | None = None
         self._idle_timer: threading.Timer | None = None
         self._stream_failure: BaseException | None = None
         self._restartable_idle_failure = False
@@ -111,7 +112,10 @@ class PiProcess:
     @property
     def active_workflow(self) -> bool:
         with self._lock:
-            return self._active_workflow
+            return self._has_active_workflow_locked()
+
+    def _has_active_workflow_locked(self) -> bool:
+        return self._active_workflow or self._pending_workflow_start_id is not None
 
     def subscribe_events(self, maxsize: int = 1000) -> EventSubscription[AgentEvent]:
         return self._subscriptions.subscribe(maxsize=maxsize)
@@ -121,6 +125,8 @@ class PiProcess:
             if self._closed:
                 return
             self._closed = True
+            self._pending_workflow_start_id = None
+            self._active_workflow = False
         self._cancel_idle_timer()
         self._stop_process(graceful=True)
         if self._options.auto_close_subscriptions:
@@ -135,29 +141,33 @@ class PiProcess:
             self._cancel_idle_timer()
             self._ensure_started_locked()
             command = ensure_command_id(command)
-            if command.type == "prompt":
-                self._active_workflow = True
+            pending_workflow_start = False
+            if command.type == "prompt" and not self._has_active_workflow_locked():
+                self._pending_workflow_start_id = command.id
+                pending_workflow_start = True
             pending = self._pending.add(command)
             try:
                 self._write_command_locked(command)
             except BaseException:
-                if command.type == "prompt":
-                    self._active_workflow = False
+                if pending_workflow_start and self._pending_workflow_start_id == command.id:
+                    self._pending_workflow_start_id = None
                 self._pending.cancel(command.id or "")
                 raise
         if not pending.ready.wait(timeout):
             self._pending.abandon(command.id or "")
-            if command.type == "prompt":
-                with self._lock:
-                    self._active_workflow = False
             raise PiTimeoutError(command.type, timeout, command.id)
         if pending.error is not None:
-            if command.type == "prompt":
-                with self._lock:
-                    self._active_workflow = False
             raise pending.error
         assert pending.response is not None
-        pending.response.raise_for_error()
+        try:
+            pending.response.raise_for_error()
+        except BaseException:
+            if pending_workflow_start:
+                with self._lock:
+                    if self._pending_workflow_start_id == command.id:
+                        self._pending_workflow_start_id = None
+                        self._schedule_idle_timer_locked()
+            raise
         with self._lock:
             self._schedule_idle_timer_locked()
         return pending.response
@@ -192,6 +202,7 @@ class PiProcess:
         self._jsonl_reader = JsonlReader()
         self._stream_failure = None
         self._restartable_idle_failure = False
+        self._pending_workflow_start_id = None
         self._pending.clear_abandoned()
         argv = self._build_argv()
         factory: Callable[..., Any] = self._options.process_factory or subprocess.Popen
@@ -284,6 +295,10 @@ class PiProcess:
             response = parse_response(payload)
             if response.request_id is None:
                 raise PiProtocolError("Received response without an id")
+            with self._lock:
+                if generation == self._process_generation and response.request_id == self._pending_workflow_start_id and not response.success:
+                    self._pending_workflow_start_id = None
+                    self._schedule_idle_timer_locked()
             fulfillment = self._pending.fulfill(response.request_id, response)
             if fulfillment == "abandoned":
                 return
@@ -297,8 +312,10 @@ class PiProcess:
             if generation != self._process_generation:
                 return
             if isinstance(event, AgentStartEvent):
+                self._pending_workflow_start_id = None
                 self._active_workflow = True
             elif isinstance(event, AgentEndEvent):
+                self._pending_workflow_start_id = None
                 self._active_workflow = False
                 self._schedule_idle_timer_locked()
         self._subscriptions.publish(event)
@@ -310,8 +327,9 @@ class PiProcess:
             if self._stream_failure is not None:
                 return
             self._stream_failure = error
-            active = self._active_workflow
+            active = self._has_active_workflow_locked()
             self._restartable_idle_failure = not active and isinstance(error, PiProcessExitedError)
+            self._pending_workflow_start_id = None
             self._active_workflow = False
         self._pending.fail_all(error)
         if active:
@@ -353,7 +371,7 @@ class PiProcess:
     def _schedule_idle_timer_locked(self) -> None:
         self._cancel_idle_timer()
         timeout = self._options.idle_timeout
-        if timeout is None or timeout <= 0 or self._active_workflow or self._closed or self._process is None:
+        if timeout is None or timeout <= 0 or self._has_active_workflow_locked() or self._closed or self._process is None:
             return
         self._idle_timer = threading.Timer(timeout, self._handle_idle_timeout)
         self._idle_timer.daemon = True
@@ -367,7 +385,7 @@ class PiProcess:
 
     def _handle_idle_timeout(self) -> None:
         with self._lock:
-            if self._closed or self._active_workflow:
+            if self._closed or self._has_active_workflow_locked():
                 return
         self._stop_process(graceful=True)
 

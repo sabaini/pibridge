@@ -12,7 +12,7 @@ import pytest
 
 from pi_rpc.commands import make_command
 from pi_rpc.events import AgentStartEvent
-from pi_rpc.exceptions import PiProcessExitedError, PiTimeoutError
+from pi_rpc.exceptions import PiCommandError, PiProcessExitedError, PiTimeoutError
 from pi_rpc.jsonl import JsonlReader, serialize_json_line
 from pi_rpc.models import PiClientOptions
 from pi_rpc.process import PiProcess
@@ -307,6 +307,80 @@ def test_late_response_after_timeout_does_not_poison_client() -> None:
 
     assert response.command == "get_state"
     assert response.data.session_id == "second"
+
+
+def test_timed_out_prompt_exit_still_fails_event_subscriptions() -> None:
+    children: list[FakeChildProcess] = []
+    process = make_process(children)
+    subscription = process.subscribe_events(maxsize=10)
+
+    def on_command(payload: dict[str, Any]) -> None:
+        child = children[0]
+        child.send_record({"type": "agent_start"})
+
+    process._ensure_started_locked()  # type: ignore[attr-defined]
+    children[0].on_command = on_command
+
+    with pytest.raises(PiTimeoutError):
+        process.send_command(make_command("prompt", message="hi"), timeout=0.01)
+
+    assert subscription.get(timeout=0.2).type == "agent_start"
+    children[0].exit(1)
+
+    with pytest.raises(PiProcessExitedError):
+        subscription.get(timeout=0.2)
+
+
+
+def test_failed_idle_prompt_does_not_poison_idle_restart() -> None:
+    children: list[FakeChildProcess] = []
+
+    def factory(*args: Any, **kwargs: Any) -> FakeChildProcess:
+        child = FakeChildProcess()
+        index = len(children)
+        if index == 0:
+            child.on_command = lambda payload: child.send_record(
+                {"id": payload["id"], "type": "response", "command": payload["type"], "success": False, "error": "bad prompt"}
+            )
+        else:
+            child.on_command = lambda payload: child.send_record(
+                {
+                    "id": payload["id"],
+                    "type": "response",
+                    "command": payload["type"],
+                    "success": True,
+                    "data": {
+                        "model": None,
+                        "thinkingLevel": "medium",
+                        "isStreaming": False,
+                        "isCompacting": False,
+                        "steeringMode": "all",
+                        "followUpMode": "one-at-a-time",
+                        "sessionId": "restarted",
+                        "autoCompactionEnabled": True,
+                        "messageCount": 0,
+                        "pendingMessageCount": 0,
+                    },
+                }
+            )
+        children.append(child)
+        return child
+
+    process = PiProcess(PiClientOptions(process_factory=factory, command_timeout=0.2, idle_timeout=None))
+
+    with pytest.raises(PiCommandError):
+        process.send_command(make_command("prompt", message="hi"))
+
+    assert process.active_workflow is False
+    children[0].exit(1)
+    time.sleep(0.05)
+
+    response = process.send_command(make_command("get_state"))
+
+    assert response.command == "get_state"
+    assert response.data.session_id == "restarted"
+    assert len(children) == 2
+
 
 
 def test_process_restarts_after_idle_exit() -> None:
