@@ -62,3 +62,61 @@ def test_build_initial_analysis_prompt_truncates_wide_schema_and_long_categorica
     assert "+ 3 more columns omitted" in prompt
     assert long_value not in prompt
     assert "very-long-category-value-very-long-c..." in prompt
+
+
+def test_safe_categorical_highlights_are_prioritized_ahead_of_redacted_sensitive_columns() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "customer_id": "C001",
+                "email": "alice@example.com",
+                "order_ref": "ORD-1001",
+                "external_id": "EXT-1",
+                "session_id": "SESSION-1",
+                "status": "active",
+                "country": "US",
+            },
+            {
+                "customer_id": "C002",
+                "email": "bob@example.com",
+                "order_ref": "ORD-1002",
+                "external_id": "EXT-2",
+                "session_id": "SESSION-2",
+                "status": "inactive",
+                "country": "CA",
+            },
+            {
+                "customer_id": "C003",
+                "email": "carol@example.com",
+                "order_ref": "ORD-1003",
+                "external_id": "EXT-3",
+                "session_id": "SESSION-3",
+                "status": "active",
+                "country": "US",
+            },
+            {
+                "customer_id": "C004",
+                "email": "dave@example.com",
+                "order_ref": "ORD-1004",
+                "external_id": "EXT-4",
+                "session_id": "SESSION-4",
+                "status": "active",
+                "country": "CA",
+            },
+            {
+                "customer_id": "C005",
+                "email": "eve@example.com",
+                "order_ref": "ORD-1005",
+                "external_id": "EXT-5",
+                "session_id": "SESSION-5",
+                "status": "pending",
+                "country": "US",
+            },
+        ]
+    )
+    profile = profiler.build_dataset_profile(frame)
+
+    prompt = prompts.build_initial_analysis_prompt(profile, dataset_name="budget.csv")
+
+    assert "status: active (3), inactive (1), pending (1)" in prompt
+    assert "country: US (3), CA (2)" in prompt

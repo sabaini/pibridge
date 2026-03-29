@@ -76,6 +76,9 @@ class FakeChildProcess:
         self.on_command: Callable[[dict[str, Any]], None] | None = None
         self.stdin = FakeWritable(self._handle_write)
         self._returncode: int | None = None
+        self.terminate_calls = 0
+        self.kill_calls = 0
+        self.wait_calls = 0
 
     def _handle_write(self, data: bytes) -> None:
         for line in self._stdin_reader.feed(data):
@@ -99,12 +102,15 @@ class FakeChildProcess:
         return self._returncode
 
     def terminate(self) -> None:
+        self.terminate_calls += 1
         self.exit(0)
 
     def kill(self) -> None:
+        self.kill_calls += 1
         self.exit(-9)
 
     def wait(self, timeout: float | None = None) -> int:
+        self.wait_calls += 1
         end = None if timeout is None else time.monotonic() + timeout
         while self._returncode is None:
             if end is not None and time.monotonic() > end:
@@ -145,6 +151,11 @@ def make_process(children: list[FakeChildProcess]) -> PiProcess:
         return child
 
     return PiProcess(PiClientOptions(process_factory=factory, command_timeout=0.2, idle_timeout=None))
+
+
+def start_process_for_test(process: PiProcess) -> None:
+    process._ensure_started_locked()  # type: ignore[attr-defined]
+    process._startup_ready_generation = process._process_generation  # type: ignore[attr-defined]
 
 
 def test_process_starts_lazily_runs_startup_probe_and_routes_response() -> None:
@@ -190,6 +201,25 @@ def test_cold_start_times_out_when_startup_probe_never_completes() -> None:
     assert [command["type"] for command in children[0].commands] == ["get_state"]
 
 
+def test_cold_start_timeout_terminates_spawned_child() -> None:
+    children: list[FakeChildProcess] = []
+
+    def factory(*args: Any, **kwargs: Any) -> FakeChildProcess:
+        child = FakeChildProcess()
+        children.append(child)
+        return child
+
+    process = PiProcess(PiClientOptions(process_factory=factory, startup_timeout=0.01, command_timeout=0.2, idle_timeout=None))
+
+    with pytest.raises(PiStartupError, match="startup readiness"):
+        process.send_command(make_command("get_state"))
+
+    child = children[0]
+    assert child.poll() is not None
+    assert child.terminate_calls + child.kill_calls >= 1
+    assert child.wait_calls >= 1
+
+
 def test_cold_start_uses_command_timeout_after_startup_probe_succeeds() -> None:
     children: list[FakeChildProcess] = []
 
@@ -216,6 +246,58 @@ def test_cold_start_uses_command_timeout_after_startup_probe_succeeds() -> None:
     assert [command["type"] for command in children[0].commands] == ["get_state", "get_state"]
 
 
+def test_concurrent_cold_start_waits_for_shared_startup_probe() -> None:
+    children: list[FakeChildProcess] = []
+    probe_seen = threading.Event()
+    responses: list[str] = []
+    errors: list[BaseException] = []
+    startup_probe_id: str | None = None
+
+    def factory(*args: Any, **kwargs: Any) -> FakeChildProcess:
+        child = FakeChildProcess()
+
+        def on_command(payload: dict[str, Any]) -> None:
+            nonlocal startup_probe_id
+            if startup_probe_id is None:
+                startup_probe_id = payload["id"]
+                probe_seen.set()
+                return
+            child.send_record(state_response(payload["id"], payload["id"]))
+
+        child.on_command = on_command
+        children.append(child)
+        return child
+
+    process = PiProcess(PiClientOptions(process_factory=factory, startup_timeout=0.2, command_timeout=0.2, idle_timeout=None))
+
+    def send() -> None:
+        try:
+            response = process.send_command(make_command("get_state"))
+            responses.append(response.data.session_id)
+        except BaseException as exc:  # pragma: no cover - exercised only on failure paths
+            errors.append(exc)
+
+    first = threading.Thread(target=send)
+    second = threading.Thread(target=send)
+    first.start()
+    assert probe_seen.wait(timeout=0.2)
+    second.start()
+
+    time.sleep(0.05)
+    assert len(children) == 1
+    assert [command["type"] for command in children[0].commands] == ["get_state"]
+
+    assert startup_probe_id is not None
+    children[0].send_record(state_response(startup_probe_id, "ready"))
+
+    first.join(timeout=0.2)
+    second.join(timeout=0.2)
+
+    assert errors == []
+    assert len(responses) == 2
+    assert [command["type"] for command in children[0].commands] == ["get_state", "get_state", "get_state"]
+
+
 def test_process_fans_out_events_and_tracks_active_workflow() -> None:
     children: list[FakeChildProcess] = []
     process = make_process(children)
@@ -227,7 +309,7 @@ def test_process_fans_out_events_and_tracks_active_workflow() -> None:
         child.send_record({"type": "agent_start"})
         child.send_record({"type": "agent_end", "messages": []})
 
-    process._ensure_started_locked()  # type: ignore[attr-defined]
+    start_process_for_test(process)
     children[0].on_command = on_command
     process.send_command(make_command("prompt", message="hi"))
     first = subscription.get(timeout=0.2)
@@ -240,7 +322,7 @@ def test_process_fans_out_events_and_tracks_active_workflow() -> None:
 def test_process_times_out_and_cleans_pending_request() -> None:
     children: list[FakeChildProcess] = []
     process = make_process(children)
-    process._ensure_started_locked()  # type: ignore[attr-defined]
+    start_process_for_test(process)
     with pytest.raises(PiTimeoutError):
         process.send_command(make_command("get_state"), timeout=0.01)
 
@@ -300,7 +382,7 @@ def test_process_overlays_child_environment(monkeypatch: pytest.MonkeyPatch) -> 
 def test_late_response_after_timeout_does_not_poison_client() -> None:
     children: list[FakeChildProcess] = []
     process = make_process(children)
-    process._ensure_started_locked()  # type: ignore[attr-defined]
+    start_process_for_test(process)
     child = children[0]
     timed_out_request_id: str | None = None
 
@@ -335,7 +417,7 @@ def test_timed_out_prompt_exit_still_fails_event_subscriptions() -> None:
         child = children[0]
         child.send_record({"type": "agent_start"})
 
-    process._ensure_started_locked()  # type: ignore[attr-defined]
+    start_process_for_test(process)
     children[0].on_command = on_command
 
     with pytest.raises(PiTimeoutError):
@@ -425,7 +507,7 @@ def test_process_exit_during_active_workflow_fails_subscriptions() -> None:
         child.send_record({"type": "agent_start"})
         child.exit(1)
 
-    process._ensure_started_locked()  # type: ignore[attr-defined]
+    start_process_for_test(process)
     children[0].on_command = on_command
     process.send_command(make_command("prompt", message="hi"))
     assert subscription.get(timeout=0.2).type == "agent_start"

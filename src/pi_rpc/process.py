@@ -108,6 +108,8 @@ class PiProcess:
         self._stream_failure: BaseException | None = None
         self._restartable_idle_failure = False
         self._process_generation = 0
+        self._startup_pending: _PendingRequest | None = None
+        self._startup_ready_generation = 0
 
     @property
     def active_workflow(self) -> bool:
@@ -135,25 +137,29 @@ class PiProcess:
     def send_command(self, command: RpcCommand, timeout: float | None = None) -> RpcResponse[Any]:
         if timeout is None:
             timeout = self._options.command_timeout
-        self._ensure_ready_for_command()
-        with self._lock:
-            if self._closed:
-                raise PiProcessExitedError("Pi process client is closed")
-            self._cancel_idle_timer()
-            self._ensure_started_locked()
-            command = ensure_command_id(command)
-            pending_workflow_start = False
-            if command.type == "prompt" and not self._has_active_workflow_locked():
-                self._pending_workflow_start_id = command.id
-                pending_workflow_start = True
-            pending = self._pending.add(command)
-            try:
-                self._write_command_locked(command)
-            except BaseException:
-                if pending_workflow_start and self._pending_workflow_start_id == command.id:
-                    self._pending_workflow_start_id = None
-                self._pending.cancel(command.id or "")
-                raise
+        while True:
+            with self._lock:
+                if self._closed:
+                    raise PiProcessExitedError("Pi process client is closed")
+                self._cancel_idle_timer()
+                self._ensure_started_locked()
+                startup_pending = self._startup_probe_for_current_process_locked()
+                if startup_pending is None:
+                    command = ensure_command_id(command)
+                    pending_workflow_start = False
+                    if command.type == "prompt" and not self._has_active_workflow_locked():
+                        self._pending_workflow_start_id = command.id
+                        pending_workflow_start = True
+                    pending = self._pending.add(command)
+                    try:
+                        self._write_command_locked(command)
+                    except BaseException:
+                        if pending_workflow_start and self._pending_workflow_start_id == command.id:
+                            self._pending_workflow_start_id = None
+                        self._pending.cancel(command.id or "")
+                        raise
+                    break
+            self._await_startup_probe(startup_pending)
         response = self._wait_for_pending_request(pending, timeout=timeout, timeout_error=PiTimeoutError(command.type, timeout, command.id))
         try:
             response.raise_for_error()
@@ -182,17 +188,14 @@ class PiProcess:
         self._start_process_locked()
         return True
 
-    def _ensure_ready_for_command(self) -> None:
-        while True:
-            with self._lock:
-                if self._closed:
-                    raise PiProcessExitedError("Pi process client is closed")
-                self._cancel_idle_timer()
-                started = self._ensure_started_locked()
-                startup_pending = self._send_startup_probe_locked() if started else None
-            if startup_pending is None:
-                return
-            self._await_startup_probe(startup_pending)
+    def _startup_probe_for_current_process_locked(self) -> _PendingRequest | None:
+        if self._process is None:
+            raise PiProcessExitedError("Pi process is not running")
+        if self._startup_ready_generation == self._process_generation:
+            return None
+        if self._startup_pending is None:
+            self._startup_pending = self._send_startup_probe_locked()
+        return self._startup_pending
 
     def _send_startup_probe_locked(self) -> _PendingRequest:
         command = ensure_command_id(make_command("get_state"))
@@ -211,11 +214,23 @@ class PiProcess:
             response = self._wait_for_pending_request(pending, timeout=timeout, timeout_error=timeout_error)
             response.raise_for_error()
         except PiStartupError:
+            with self._lock:
+                if self._startup_pending is pending:
+                    self._startup_pending = None
+                    self._startup_ready_generation = 0
             self._stop_process(graceful=False)
             raise
         except BaseException as exc:
+            with self._lock:
+                if self._startup_pending is pending:
+                    self._startup_pending = None
+                    self._startup_ready_generation = 0
             self._stop_process(graceful=False)
             raise PiStartupError(f"Pi failed during startup readiness probe: {exc}") from exc
+        with self._lock:
+            if self._startup_pending is pending:
+                self._startup_pending = None
+                self._startup_ready_generation = self._process_generation
 
     def _wait_for_pending_request(self, pending: _PendingRequest, *, timeout: float, timeout_error: BaseException) -> RpcResponse[Any]:
         command_id = pending.command.id or ""
@@ -245,6 +260,8 @@ class PiProcess:
         self._stream_failure = None
         self._restartable_idle_failure = False
         self._pending_workflow_start_id = None
+        self._startup_pending = None
+        self._startup_ready_generation = 0
         self._pending.clear_abandoned()
         argv = self._build_argv()
         factory: Callable[..., Any] = self._options.process_factory or subprocess.Popen
@@ -382,6 +399,8 @@ class PiProcess:
         with self._lock:
             process = self._process
             self._process = None
+            self._startup_pending = None
+            self._startup_ready_generation = 0
         if process is None:
             return
         try:
@@ -390,12 +409,14 @@ class PiProcess:
         except OSError:
             pass
         try:
-            if graceful and process.poll() is None:
+            if process.poll() is None:
                 process.terminate()
-                process.wait(timeout=1)
+                process.wait(timeout=1 if graceful else 0.2)
         except Exception:
             try:
-                process.kill()
+                if process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=1)
             except Exception:
                 pass
         finally:
