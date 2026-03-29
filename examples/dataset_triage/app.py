@@ -91,13 +91,21 @@ def main() -> None:
             dataset_name=loaded_dataset.upload.name or "uploaded.csv",
             placeholder=stream_placeholder,
             history=state["conversation_history"],
+            marks_initial_analysis_complete=True,
         )
         st.rerun()
 
+    follow_up_disabled = analyze_disabled or not state["has_completed_initial_analysis"]
+    if not state["has_completed_initial_analysis"]:
+        st.info("Run **Analyze with Pi** first so follow-up questions stay grounded in the uploaded dataset.")
+
     with st.form("follow_up_form", clear_on_submit=True):
         question = st.text_input("Ask a follow-up question", placeholder="Which three columns should I clean first?")
-        submitted = st.form_submit_button("Send", disabled=analyze_disabled)
+        submitted = st.form_submit_button("Send", disabled=follow_up_disabled)
     if submitted and question.strip():
+        if not state["has_completed_initial_analysis"]:
+            state["analysis_error"] = "Analyze the dataset with Pi before asking follow-up questions."
+            st.rerun()
         state["conversation_history"].append({"role": "user", "text": question.strip()})
         _run_streamed_request(
             lambda on_update: state["controller"].ask_follow_up(question.strip(), on_update=on_update),
@@ -132,7 +140,14 @@ def _handle_upload(uploaded_file: Any) -> None:
     state["session_needs_reset"] = True
 
 
-def _run_streamed_request(runner: Any, *, dataset_name: str, placeholder: Any, history: list[dict[str, str]]) -> None:
+def _run_streamed_request(
+    runner: Any,
+    *,
+    dataset_name: str,
+    placeholder: Any,
+    history: list[dict[str, str]],
+    marks_initial_analysis_complete: bool = False,
+) -> None:
     state = _state()
     state["analysis_running"] = True
     state["latest_stream_text"] = ""
@@ -150,6 +165,8 @@ def _run_streamed_request(runner: Any, *, dataset_name: str, placeholder: Any, h
     except DatasetTriageSessionError as exc:
         state["analysis_error"] = str(exc)
     else:
+        if marks_initial_analysis_complete:
+            state["has_completed_initial_analysis"] = True
         if final_text:
             history.append({"role": "assistant", "text": final_text})
             state["latest_stream_text"] = ""
@@ -171,6 +188,7 @@ def _reset_conversation_state() -> None:
     state["latest_stream_text"] = ""
     state["analysis_error"] = None
     state["analysis_running"] = False
+    state["has_completed_initial_analysis"] = False
 
 
 def _state() -> Any:
@@ -184,6 +202,7 @@ def _state() -> Any:
         st.session_state.analysis_error = None
         st.session_state.analysis_running = False
         st.session_state.session_needs_reset = False
+        st.session_state.has_completed_initial_analysis = False
     return st.session_state
 
 

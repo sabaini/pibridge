@@ -10,6 +10,8 @@ MAX_MISSING_COLUMNS = 5
 MAX_SUSPICIOUS_COLUMNS = 8
 MAX_NUMERIC_COLUMNS = 5
 MAX_CATEGORICAL_COLUMNS = 5
+MAX_DTYPE_COLUMNS = 12
+MAX_CATEGORICAL_VALUE_LENGTH = 36
 
 
 def build_initial_analysis_prompt(profile: DatasetProfile, *, dataset_name: str | None = None) -> str:
@@ -17,7 +19,7 @@ def build_initial_analysis_prompt(profile: DatasetProfile, *, dataset_name: str 
     suspicious = profile.suspicious_columns[:MAX_SUSPICIOUS_COLUMNS]
     numeric_lines = _format_numeric_highlights(profile)[:MAX_NUMERIC_COLUMNS]
     categorical_lines = _format_categorical_highlights(profile)[:MAX_CATEGORICAL_COLUMNS]
-    dtype_overview = ", ".join(f"{column.name} ({column.dtype})" for column in profile.columns_profile)
+    dtype_overview = _format_dtype_overview(profile)
 
     lines = [
         "You are helping triage a CSV dataset.",
@@ -57,6 +59,14 @@ def _format_suspicious_columns(columns: tuple[object, ...]) -> str:
     return "; ".join(formatted)
 
 
+def _format_dtype_overview(profile: DatasetProfile) -> str:
+    entries = [f"{column.name} ({column.dtype})" for column in profile.columns_profile[:MAX_DTYPE_COLUMNS]]
+    remaining = len(profile.columns_profile) - len(entries)
+    if remaining > 0:
+        entries.append(f"+ {remaining} more columns omitted")
+    return ", ".join(entries) if entries else "none"
+
+
 def _format_numeric_highlights(profile: DatasetProfile) -> list[str]:
     lines: list[str] = []
     for column_name, summary in profile.numeric_summary.items():
@@ -71,6 +81,12 @@ def _format_categorical_highlights(profile: DatasetProfile) -> list[str]:
     for column_name, values in profile.categorical_top_values.items():
         if not values:
             continue
-        top_values = ", ".join(f"{value} ({count})" for value, count in values)
+        top_values = ", ".join(f"{_truncate_text(value)} ({count})" for value, count in values)
         lines.append(f"{column_name}: {top_values}")
     return lines
+
+
+def _truncate_text(value: str) -> str:
+    if len(value) <= MAX_CATEGORICAL_VALUE_LENGTH:
+        return value
+    return value[:MAX_CATEGORICAL_VALUE_LENGTH] + "..."

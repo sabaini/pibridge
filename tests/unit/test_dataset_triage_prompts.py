@@ -34,3 +34,24 @@ def test_build_initial_analysis_prompt_is_structured_and_bounded() -> None:
     assert "score" in prompt
     assert "Do not invent metrics" in prompt
     assert "alice@example.com,US" not in prompt
+
+
+def test_build_initial_analysis_prompt_truncates_wide_schema_and_long_categorical_values() -> None:
+    long_value = "very-long-category-value-" * 4
+    frame = pd.DataFrame(
+        [
+            {**{f"column_{index}": index for index in range(14)}, "category": long_value},
+            {**{f"column_{index}": index + 1 for index in range(14)}, "category": long_value.lower()},
+            {**{f"column_{index}": index + 2 for index in range(14)}, "category": "short"},
+        ]
+    )
+    profile = profiler.build_dataset_profile(frame)
+
+    prompt = prompts.build_initial_analysis_prompt(profile, dataset_name="wide.csv")
+
+    assert "column_0 (int64)" in prompt
+    assert "column_11 (int64)" in prompt
+    assert "column_12 (int64)" not in prompt
+    assert "+ 3 more columns omitted" in prompt
+    assert long_value not in prompt
+    assert "very-long-category-value-very-long-c..." in prompt

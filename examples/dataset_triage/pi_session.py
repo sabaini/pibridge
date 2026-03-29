@@ -7,7 +7,14 @@ from collections.abc import Callable
 from typing import Any
 
 from pi_rpc import PiClient, PiClientOptions
-from pi_rpc.exceptions import PiCommandError, PiProcessExitedError, PiProtocolError, PiStartupError, PiTimeoutError
+from pi_rpc.exceptions import (
+    PiCommandError,
+    PiProcessExitedError,
+    PiProtocolError,
+    PiStartupError,
+    PiSubscriptionOverflowError,
+    PiTimeoutError,
+)
 
 
 class DatasetTriageSessionError(RuntimeError):
@@ -30,6 +37,11 @@ class DatasetTriageSession:
         self._client: Any | None = None
         self._subscription: Any | None = None
         self._current_session_name: str | None = None
+        self._has_completed_initial_analysis = False
+
+    @property
+    def can_follow_up(self) -> bool:
+        return self._has_completed_initial_analysis
 
     def close(self) -> None:
         if self._client is not None:
@@ -37,6 +49,7 @@ class DatasetTriageSession:
         self._client = None
         self._subscription = None
         self._current_session_name = None
+        self._has_completed_initial_analysis = False
 
     def reset_for_dataset(self, dataset_name: str) -> str:
         session_name = f"dataset-triage:{_sanitize_dataset_name(dataset_name)}"
@@ -45,20 +58,26 @@ class DatasetTriageSession:
             client.new_session()
             client.set_session_name(session_name)
         except _SESSION_ERRORS as exc:
+            self._reset_subscription_if_closed()
             raise DatasetTriageSessionError(f"Pi request failed while creating a dataset session: {exc}") from exc
         self._current_session_name = session_name
+        self._has_completed_initial_analysis = False
         return session_name
 
     def analyze_profile(self, prompt: str, *, on_update: Callable[[str], None] | None = None) -> str:
-        return self._run_stream(lambda client: client.prompt(prompt), on_update=on_update)
+        final_text = self._run_stream(lambda client: client.prompt(prompt), on_update=on_update)
+        self._has_completed_initial_analysis = True
+        return final_text
 
     def ask_follow_up(self, question: str, *, on_update: Callable[[str], None] | None = None) -> str:
+        if not self._has_completed_initial_analysis:
+            raise DatasetTriageSessionError("Analyze the dataset with Pi before asking follow-up questions.")
         return self._run_stream(lambda client: client.prompt(question, streaming_behavior="followUp"), on_update=on_update)
 
     def _ensure_client(self) -> Any:
         if self._client is None:
             self._client = self._client_factory(self._options)
-        if self._subscription is None:
+        if self._subscription is None or getattr(self._subscription, "closed", False):
             self._subscription = self._client.subscribe_events(maxsize=self._subscription_maxsize)
         return self._client
 
@@ -68,8 +87,10 @@ class DatasetTriageSession:
             sender(client)
             return self._consume_response(client, on_update=on_update)
         except _SESSION_ERRORS as exc:
+            self._reset_subscription_if_closed()
             raise DatasetTriageSessionError(f"Pi request failed: {exc}") from exc
         except queue.Empty as exc:
+            self._reset_subscription_if_closed()
             raise DatasetTriageSessionError("Pi request failed: timed out while waiting for streamed events.") from exc
 
     def _consume_response(self, client: Any, *, on_update: Callable[[str], None] | None = None) -> str:
@@ -97,10 +118,22 @@ class DatasetTriageSession:
         return final_text
 
 
+    def _reset_subscription_if_closed(self) -> None:
+        if self._subscription is not None and getattr(self._subscription, "closed", False):
+            self._subscription = None
+
+
 def _sanitize_dataset_name(dataset_name: str) -> str:
     basename = os.path.basename(dataset_name) or "dataset"
     sanitized = re.sub(r"[^A-Za-z0-9._-]+", "-", basename).strip("-")
     return sanitized or "dataset"
 
 
-_SESSION_ERRORS = (PiStartupError, PiProcessExitedError, PiProtocolError, PiCommandError, PiTimeoutError)
+_SESSION_ERRORS = (
+    PiStartupError,
+    PiProcessExitedError,
+    PiProtocolError,
+    PiCommandError,
+    PiSubscriptionOverflowError,
+    PiTimeoutError,
+)
