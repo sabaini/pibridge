@@ -7,6 +7,7 @@ import shutil
 import time
 from collections.abc import Iterator, Mapping
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -26,8 +27,15 @@ DEFAULT_MOCK_PROMPT_MAP = {
 }
 
 
+_REQUIRED_ENV_VALUES = {"1", "true", "yes", "on"}
+
+
 def _live_override_enabled() -> bool:
     return bool(os.environ.get("PI_RPC_PROVIDER") and os.environ.get("PI_RPC_MODEL"))
+
+
+def _integration_required() -> bool:
+    return os.environ.get("PI_RPC_REQUIRE_INTEGRATION", "").strip().lower() in _REQUIRED_ENV_VALUES
 
 
 def _integration_ready() -> tuple[bool, str]:
@@ -38,11 +46,22 @@ def _integration_ready() -> tuple[bool, str]:
     return True, ""
 
 
+def _integration_availability_outcome(*, ready: bool, reason: str, required: bool) -> tuple[str, str]:
+    if ready:
+        return "ready", ""
+    if required:
+        return "fail", f"Integration tests are required but unavailable: {reason}"
+    return "skip", reason
+
+
 @pytest.fixture(scope="session")
 def integration_ready() -> None:
     ready, reason = _integration_ready()
-    if not ready:
-        pytest.skip(reason)
+    outcome, message = _integration_availability_outcome(ready=ready, reason=reason, required=_integration_required())
+    if outcome == "fail":
+        pytest.fail(message)
+    if outcome == "skip":
+        pytest.skip(message)
 
 
 @pytest.fixture(scope="session")
@@ -112,7 +131,7 @@ def isolated_pi_workspace(tmp_path: Path) -> Path:
     return workspace
 
 
-def _mock_env(prompt_map: Mapping[str, str], context_map: Mapping[str, str]) -> dict[str, str]:
+def _mock_env(prompt_map: Mapping[str, Any], context_map: Mapping[str, Any]) -> dict[str, str]:
     return {
         MOCK_API_KEY_ENV: "pi-rpc-mock-test-key",
         MOCK_PROMPT_MAP_ENV: json.dumps(dict(prompt_map), sort_keys=True),
@@ -170,6 +189,24 @@ def pi_client(
 
 
 @pytest.fixture
+def live_pi_client(
+    integration_ready: None,
+    isolated_pi_workspace: Path,
+    command_timeout: float,
+) -> Iterator[PiClient]:
+    if not _live_override_enabled():
+        pytest.skip("live backend requires PI_RPC_PROVIDER and PI_RPC_MODEL")
+    client = _make_client(
+        workspace=isolated_pi_workspace,
+        command_timeout=command_timeout,
+        provider=os.environ["PI_RPC_PROVIDER"],
+        model=os.environ["PI_RPC_MODEL"],
+    )
+    with client:
+        yield client
+
+
+@pytest.fixture
 def mock_pi_client(
     integration_ready: None,
     isolated_pi_workspace: Path,
@@ -209,6 +246,21 @@ def _wait_for_agent_end(subscription: queue.Queue[AgentEvent], timeout: float = 
         if event.type == "agent_end":
             return event
     raise AssertionError(f"timed out waiting for agent_end; last event: {last_event!r}")
+
+
+def _wait_for_event(subscription: queue.Queue[AgentEvent], event_type: str, timeout: float = 120.0) -> AgentEvent:
+    deadline = time.monotonic() + timeout
+    last_event: AgentEvent | None = None
+    while time.monotonic() < deadline:
+        remaining = max(0.1, min(1.0, deadline - time.monotonic()))
+        try:
+            event = subscription.get(timeout=remaining)
+        except queue.Empty:
+            continue
+        last_event = event
+        if event.type == event_type:
+            return event
+    raise AssertionError(f"timed out waiting for {event_type}; last event: {last_event!r}")
 
 
 def _prompt_and_get_text(client: PiClient, prompt: str, timeout: float = 120.0) -> str:

@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - feat/**
+      - feature/**
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint-type-unit-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev,examples]'
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Mypy
+        run: mypy src
+
+      - name: Unit tests
+        run: pytest -m 'not integration'
+
+      - name: Build
+        run: python -m build
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev,examples]'
+
+      - name: Install pi CLI
+        run: npm install -g @mariozechner/pi-coding-agent
+
+      - name: Mock-backed integration tests
+        env:
+          PI_RPC_REQUIRE_INTEGRATION: '1'
+        run: pytest -m integration

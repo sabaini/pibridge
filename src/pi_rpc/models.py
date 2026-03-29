@@ -95,7 +95,6 @@ class PiClientOptions:
     session_dir: str | None = None
     cwd: str | None = None
     env: Mapping[str, str] | None = None
-    startup_timeout: float = 10.0
     command_timeout: float = 30.0
     idle_timeout: float | None = None
     extra_args: tuple[str, ...] = ()

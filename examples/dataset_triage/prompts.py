@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 try:
-    from .models import DatasetProfile
+    from .models import ColumnProfile, CsvLoadMetadata, DatasetProfile
 except ImportError:  # pragma: no cover - supports `streamlit run examples/dataset_triage/app.py`
-    from models import DatasetProfile
+    from models import ColumnProfile, CsvLoadMetadata, DatasetProfile
 
 
 MAX_MISSING_COLUMNS = 5
@@ -14,7 +14,12 @@ MAX_DTYPE_COLUMNS = 12
 MAX_CATEGORICAL_VALUE_LENGTH = 36
 
 
-def build_initial_analysis_prompt(profile: DatasetProfile, *, dataset_name: str | None = None) -> str:
+def build_initial_analysis_prompt(
+    profile: DatasetProfile,
+    *,
+    dataset_name: str | None = None,
+    load_metadata: CsvLoadMetadata | None = None,
+) -> str:
     highest_missing = sorted(profile.columns_profile, key=lambda column: column.null_pct, reverse=True)[:MAX_MISSING_COLUMNS]
     suspicious = profile.suspicious_columns[:MAX_SUSPICIOUS_COLUMNS]
     numeric_lines = _format_numeric_highlights(profile)[:MAX_NUMERIC_COLUMNS]
@@ -25,11 +30,14 @@ def build_initial_analysis_prompt(profile: DatasetProfile, *, dataset_name: str 
         "You are helping triage a CSV dataset.",
         "Use the structured profile below. Do not invent metrics that are not present.",
         "Base your analysis on the provided facts.",
-        "",
         "Dataset profile:",
     ]
     if dataset_name:
         lines.append(f"- dataset name: {dataset_name}")
+    if load_metadata is not None and load_metadata.truncated:
+        lines.append(
+            f"- Dataset profile is based on the first {load_metadata.loaded_rows} rows only because the local app keeps large analyses bounded."
+        )
     lines.extend(
         [
             f"- rows: {profile.rows}",
@@ -51,7 +59,7 @@ def build_initial_analysis_prompt(profile: DatasetProfile, *, dataset_name: str 
     return "\n".join(lines)
 
 
-def _format_suspicious_columns(columns: tuple[object, ...]) -> str:
+def _format_suspicious_columns(columns: tuple[ColumnProfile, ...]) -> str:
     formatted: list[str] = []
     for column in columns:
         notes = ", ".join(column.notes)

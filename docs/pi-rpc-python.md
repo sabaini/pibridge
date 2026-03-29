@@ -100,6 +100,7 @@ Implications:
 * one active prompting/streaming workflow per client
 * multiple client instances are allowed
 * each client owns its own subprocess in v1
+* callers that need stricter cross-thread startup or command serialization should provide that outside the client
 
 ## 8. Session policy
 
@@ -154,6 +155,8 @@ Examples of first-class methods:
 A generic low-level `send_command()` may exist, but the primary API should mirror protocol commands directly.
 
 Higher-level convenience workflows may be added later in a separate layer, but they are not the primary surface.
+
+One important compatibility note from the current integration suite: `PiClient.continue_prompt()` should be the recommended ergonomic helper for immediate streamed follow-ups. It is additive, maps directly to `prompt(..., streaming_behavior="followUp")`, and leaves the protocol-faithful `follow_up()` and `steer()` methods intact for callers that intentionally want the lower-level RPC behavior. On the tested upstream build, raw `follow_up()` and `steer()` requests are accepted but remain queued in session state instead of reliably starting an immediate streamed turn on their own.
 
 ## 10. Transport and framing
 
@@ -304,13 +307,16 @@ This keeps behavior honest and avoids pretending a broken stream can be resumed 
 
 There is no documented version-negotiation handshake in the Pi RPC doc. ([GitHub][1])
 
-So compatibility will be enforced by **comprehensive integration testing** against supported upstream Pi versions or commit ranges.
+So compatibility will be enforced by **comprehensive integration testing** against supported upstream Pi versions or release windows.
 
-That means:
+Current repository policy:
 
-* define a supported Pi version / commit matrix
-* run integration tests against real Pi subprocess behavior
-* treat upstream drift as a test failure, not as something inferred from a protocol handshake
+* the required CI contract is the Ubuntu GitHub Actions install path in `.github/workflows/ci.yml`, which currently installs `pi` with `npm install -g @mariozechner/pi-coding-agent`
+* the mock-backed integration suite is required in CI and may be made fail-fast with `PI_RPC_REQUIRE_INTEGRATION=1`
+* an opt-in live smoke workflow runs `tests/integration/test_live_smoke.py` against one maintainer-configured real provider/model pair when secrets are available
+* the additive `continue_prompt()` helper is part of the compatibility story because it encodes the currently verified immediate-follow-up behavior without removing the low-level RPC methods
+
+See also `docs/compatibility-policy.md` and `docs/release-checklist.md`.
 
 ## 18. Proposed package layout
 

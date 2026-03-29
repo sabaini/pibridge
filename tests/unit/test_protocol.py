@@ -14,6 +14,9 @@ from pi_rpc.protocol_types import (
     ImageContent,
     ToolCall,
     parse_agent_message,
+    parse_assistant_message_event,
+    parse_rpc_slash_command,
+    parse_session_state,
     serialize_agent_message,
 )
 from pi_rpc.responses import parse_response
@@ -224,3 +227,31 @@ def test_parse_assistant_message_round_trips() -> None:
 def test_parse_agent_message_rejects_unknown_role() -> None:
     with pytest.raises(PiProtocolError):
         parse_agent_message({"role": "mystery"})
+
+
+@pytest.mark.parametrize(
+    ("payload", "match"),
+    [
+        ({**ASSISTANT_MESSAGE, "stopReason": "mystery"}, "stopReason"),
+        ({"type": "mystery", "partial": ASSISTANT_MESSAGE}, "assistantMessageEvent.type"),
+        ({"type": "done", "reason": "mystery", "message": ASSISTANT_MESSAGE}, "assistantMessageEvent.reason"),
+        ({"name": "fix", "source": "unknown"}, "source"),
+        ({"name": "fix", "source": "prompt", "location": "team"}, "location"),
+        ({"model": MODEL, "thinkingLevel": "turbo", "isStreaming": False, "isCompacting": False, "steeringMode": "all", "followUpMode": "one-at-a-time", "sessionId": "abc", "autoCompactionEnabled": True, "messageCount": 1, "pendingMessageCount": 0}, "thinkingLevel"),
+        ({"model": MODEL, "thinkingLevel": "medium", "isStreaming": False, "isCompacting": False, "steeringMode": "many", "followUpMode": "one-at-a-time", "sessionId": "abc", "autoCompactionEnabled": True, "messageCount": 1, "pendingMessageCount": 0}, "steeringMode"),
+        ({"type": "response", "command": "cycle_model", "success": True, "data": {"model": MODEL, "thinkingLevel": "turbo", "isScoped": False}}, "cycle_model.data.thinkingLevel"),
+        ({"type": "response", "command": "cycle_thinking_level", "success": True, "data": {"level": "turbo"}}, "cycle_thinking_level.data.level"),
+    ],
+)
+def test_protocol_parsers_reject_unknown_enum_values(payload: dict[str, object], match: str) -> None:
+    with pytest.raises(PiProtocolError, match=match):
+        if payload.get("type") == "response":
+            parse_response(payload)
+        elif payload.get("type") == "done" or payload.get("type") == "mystery":
+            parse_assistant_message_event(payload)
+        elif payload.get("source") is not None:
+            parse_rpc_slash_command(payload)
+        elif payload.get("sessionId") is not None:
+            parse_session_state(payload)
+        else:
+            parse_agent_message(payload)

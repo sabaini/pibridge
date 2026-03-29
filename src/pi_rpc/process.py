@@ -153,14 +153,9 @@ class PiProcess:
                     self._pending_workflow_start_id = None
                 self._pending.cancel(command.id or "")
                 raise
-        if not pending.ready.wait(timeout):
-            self._pending.abandon(command.id or "")
-            raise PiTimeoutError(command.type, timeout, command.id)
-        if pending.error is not None:
-            raise pending.error
-        assert pending.response is not None
+        response = self._wait_for_pending_request(pending, timeout=timeout, timeout_error=PiTimeoutError(command.type, timeout, command.id))
         try:
-            pending.response.raise_for_error()
+            response.raise_for_error()
         except BaseException:
             if pending_workflow_start:
                 with self._lock:
@@ -170,7 +165,7 @@ class PiProcess:
             raise
         with self._lock:
             self._schedule_idle_timer_locked()
-        return pending.response
+        return response
 
     def _ensure_started_locked(self) -> None:
         if self._process is not None and self._process.poll() is None:
@@ -184,6 +179,16 @@ class PiProcess:
         if self._process is not None and self._process.poll() is not None:
             self._process = None
         self._start_process_locked()
+
+    def _wait_for_pending_request(self, pending: _PendingRequest, *, timeout: float, timeout_error: BaseException) -> RpcResponse[Any]:
+        command_id = pending.command.id or ""
+        if not pending.ready.wait(timeout):
+            self._pending.abandon(command_id)
+            raise timeout_error
+        if pending.error is not None:
+            raise pending.error
+        assert pending.response is not None
+        return pending.response
 
     def _build_argv(self) -> list[str]:
         argv = [self._options.executable, "--mode", "rpc"]
@@ -348,12 +353,14 @@ class PiProcess:
         except OSError:
             pass
         try:
-            if graceful and process.poll() is None:
+            if process.poll() is None:
                 process.terminate()
-                process.wait(timeout=1)
+                process.wait(timeout=1 if graceful else 0.2)
         except Exception:
             try:
-                process.kill()
+                if process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=1)
             except Exception:
                 pass
         finally:

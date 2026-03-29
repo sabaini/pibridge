@@ -1,13 +1,32 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 
 
 class DatasetLoadError(ValueError):
     """Raised when an uploaded dataset cannot be loaded safely."""
+
+
+NoticeLevel = Literal["info", "warning"]
+
+
+@dataclass(frozen=True)
+class LoadNotice:
+    level: NoticeLevel
+    code: str
+    message: str
+
+
+@dataclass(frozen=True)
+class CsvLoadOptions:
+    separator: str = ","
+    encoding: str = "utf-8"
+    has_header: bool = True
+    max_rows: int | None = 5000
+    large_file_warning_bytes: int | None = 5_000_000
 
 
 @dataclass(frozen=True)
@@ -19,9 +38,30 @@ class UploadMetadata:
 
 
 @dataclass(frozen=True)
+class CsvLoadMetadata:
+    options: CsvLoadOptions
+    loaded_rows: int
+    row_limit: int | None
+    truncated: bool
+    notices: tuple[LoadNotice, ...] = ()
+
+
+@dataclass(frozen=True)
 class LoadedDataset:
     dataframe: pd.DataFrame
     upload: UploadMetadata
+    load: CsvLoadMetadata
+
+    @property
+    def load_signature(self) -> tuple[str | None, str | None, str, str, str, bool]:
+        return (
+            self.upload.name,
+            self.upload.content_type,
+            self.upload.fingerprint,
+            self.load.options.separator,
+            self.load.options.encoding,
+            self.load.options.has_header,
+        )
 
 
 @dataclass(frozen=True)

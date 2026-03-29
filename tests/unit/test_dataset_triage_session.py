@@ -36,13 +36,15 @@ class FakeClient:
     last_text: str | None = None
     session_names: list[str] = field(default_factory=list)
     prompted: list[str] = field(default_factory=list)
-    follow_ups: list[str] = field(default_factory=list)
+    continued: list[str] = field(default_factory=list)
     extra_subscriptions: list[FakeSubscription] = field(default_factory=list)
     new_session_calls: int = 0
     subscribe_calls: int = 0
     closed: bool = False
     prompt_error: BaseException | None = None
-    follow_up_error: BaseException | None = None
+    continue_prompt_error: BaseException | None = None
+    export_result_path: str | None = None
+    export_error: BaseException | None = None
 
     def subscribe_events(self, maxsize: int = 1000) -> FakeSubscription:
         self.subscribe_calls += 1
@@ -64,10 +66,15 @@ class FakeClient:
         suffix = f"|{streaming_behavior}" if streaming_behavior is not None else ""
         self.prompted.append(f"{message}{suffix}")
 
-    def follow_up(self, message: str) -> None:
-        if self.follow_up_error is not None:
-            raise self.follow_up_error
-        self.follow_ups.append(message)
+    def continue_prompt(self, message: str) -> None:
+        if self.continue_prompt_error is not None:
+            raise self.continue_prompt_error
+        self.continued.append(message)
+
+    def export_html(self, *, output_path: str | None = None) -> object:
+        if self.export_error is not None:
+            raise self.export_error
+        return type("ExportResult", (), {"path": self.export_result_path or output_path or "session.html"})()
 
     def get_last_assistant_text(self) -> str | None:
         return self.last_text
@@ -145,7 +152,8 @@ def test_ask_follow_up_reuses_existing_client_subscription() -> None:
     final_text = session.ask_follow_up("Which column should I clean first?")
 
     assert client.subscribe_calls == 1
-    assert client.prompted == ["Dataset summary", "Which column should I clean first?|followUp"]
+    assert client.prompted == ["Dataset summary"]
+    assert client.continued == ["Which column should I clean first?"]
     assert final_text == "Follow-up"
 
 
@@ -168,7 +176,7 @@ def test_reset_for_dataset_starts_new_named_session() -> None:
     ],
 )
 def test_session_wraps_pi_errors_as_ui_safe_failures(error: BaseException) -> None:
-    client = FakeClient(subscription=FakeSubscription([]), prompt_error=error, follow_up_error=error)
+    client = FakeClient(subscription=FakeSubscription([]), prompt_error=error, continue_prompt_error=error)
     session = build_session(client)
 
     with pytest.raises(session_module.DatasetTriageSessionError, match="Pi request failed"):
@@ -195,3 +203,27 @@ def test_session_recreates_failed_subscription_before_retry(failure: BaseExcepti
 
     assert client.subscribe_calls == 2
     assert final_text == "Recovered"
+
+
+def test_export_session_html_returns_exported_path() -> None:
+    client = FakeClient(subscription=FakeSubscription([make_agent_end("ignored")]), export_result_path="/tmp/exported.html")
+    session = build_session(client)
+
+    exported_path = session.export_session_html("/tmp/requested.html")
+
+    assert exported_path == "/tmp/exported.html"
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        PiTimeoutError(command="export_html", timeout=1.0),
+        PiCommandError(command="export_html", message="rejected"),
+    ],
+)
+def test_export_session_html_wraps_pi_errors(error: BaseException) -> None:
+    client = FakeClient(subscription=FakeSubscription([make_agent_end("ignored")]), export_error=error)
+    session = build_session(client)
+
+    with pytest.raises(session_module.DatasetTriageSessionError, match="Pi request failed"):
+        session.export_session_html("/tmp/requested.html")
