@@ -28,6 +28,8 @@ Or, with pip available:
 pip install -e .[dev]
 ```
 
+Example-only dependencies such as `pandas` and `streamlit` live in the `examples` extra, so core development does not require them. Install `.[dev,examples]` if you want to run the bundled examples.
+
 ## Quick start
 
 ```python
@@ -156,6 +158,8 @@ mypy src
 python -m build
 ```
 
+Example tests that need `pandas` are skipped unless you also install `.[examples]`.
+
 ### Integration tests
 
 Integration tests run a real `pi --mode rpc` subprocess.
@@ -189,7 +193,7 @@ If the environment is not configured, the integration suite skips clearly.
 - `examples/basic_prompt.py`
 - `examples/session_flow.py`
 - `examples/bash_then_prompt.py`
-- `examples/dataset_triage/` - Streamlit CSV triage assistant with deterministic pandas profiling and Pi follow-ups
+- `examples/dataset_triage/` - Streamlit CSV triage assistant with deterministic pandas profiling and Pi follow-ups (`just dataset-triage`)
 
 ## Current limits
 

@@ -4,6 +4,8 @@ python_cmd := "if [[ -x .venv/bin/python ]]; then echo .venv/bin/python; elif co
 
 ruff_cmd := "if [[ -x .venv/bin/ruff ]]; then echo .venv/bin/ruff; else echo ruff; fi"
 
+streamlit_cmd := "if [[ -x .venv/bin/streamlit ]]; then echo .venv/bin/streamlit; else echo streamlit; fi"
+
 default:
     @just --list
 
@@ -31,3 +33,8 @@ check-all: check test-integration
 
 clean:
     rm -rf build dist .pytest_cache .ruff_cache .mypy_cache
+
+dataset-triage:
+    "$({{streamlit_cmd}})" run examples/dataset_triage/app.py
+
+dataset_triage: dataset-triage

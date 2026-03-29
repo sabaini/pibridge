@@ -15,15 +15,21 @@ From the repository root:
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-pip install -e .[dev]
+pip install -e .[examples]
 ```
 
-The example relies on the `pandas` and `streamlit` packages that are included in the repo's `dev` extra.
+If you are also doing repository development, install `.[dev,examples]` instead.
 
 ## Run
 
 ```bash
 . .venv/bin/activate
+just dataset-triage
+```
+
+Equivalent direct command:
+
+```bash
 streamlit run examples/dataset_triage/app.py
 ```
 

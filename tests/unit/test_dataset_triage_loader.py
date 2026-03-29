@@ -4,6 +4,8 @@ from io import BytesIO
 
 import pytest
 
+pytest.importorskip("pandas")
+
 from tests.example_support import load_dataset_triage_module
 
 loader = load_dataset_triage_module("loader")
