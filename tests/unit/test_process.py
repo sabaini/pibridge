@@ -170,6 +170,49 @@ def test_process_times_out_and_cleans_pending_request() -> None:
         process.send_command(make_command("get_state"), timeout=0.01)
 
 
+def test_process_forwards_extra_args_into_spawned_argv() -> None:
+    captured_argv: list[str] | None = None
+
+    def factory(*args: Any, **kwargs: Any) -> FakeChildProcess:
+        nonlocal captured_argv
+        child = FakeChildProcess()
+        captured_argv = args[0]
+        child.on_command = lambda payload: child.send_record(
+            {
+                "id": payload["id"],
+                "type": "response",
+                "command": payload["type"],
+                "success": True,
+                "data": {
+                    "model": None,
+                    "thinkingLevel": "medium",
+                    "isStreaming": False,
+                    "isCompacting": False,
+                    "steeringMode": "all",
+                    "followUpMode": "one-at-a-time",
+                    "sessionId": "argv-test",
+                    "autoCompactionEnabled": True,
+                    "messageCount": 0,
+                    "pendingMessageCount": 0,
+                },
+            }
+        )
+        return child
+
+    process = PiProcess(
+        PiClientOptions(
+            process_factory=factory,
+            command_timeout=0.2,
+            idle_timeout=None,
+            extra_args=("-e", "/tmp/mock-provider.ts", "--log-level", "debug"),
+        )
+    )
+
+    process.send_command(make_command("get_state"))
+
+    assert captured_argv == ["pi", "--mode", "rpc", "-e", "/tmp/mock-provider.ts", "--log-level", "debug"]
+
+
 def test_process_overlays_child_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PI_RPC_TEST_INHERITED", "base")
     captured_env: dict[str, str] = {}

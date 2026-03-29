@@ -187,21 +187,21 @@ def parse_event(payload: Any) -> AgentEvent:
             result=parse_tool_execution_result(payload.get("result", {})),
             is_error=is_error,
         )
-    if event_type == "auto_compaction_start":
-        return AutoCompactionStartEvent(reason=_require_str(payload, "reason"))
-    if event_type == "auto_compaction_end":
+    if event_type in {"auto_compaction_start", "compaction_start"}:
+        return AutoCompactionStartEvent(reason=_require_str(payload, "reason"), type=event_type)
+    if event_type in {"auto_compaction_end", "compaction_end"}:
         aborted = payload.get("aborted")
         will_retry = payload.get("willRetry")
         if not isinstance(aborted, bool) or not isinstance(will_retry, bool):
-            raise PiProtocolError("Expected auto_compaction_end aborted/willRetry to be booleans")
+            raise PiProtocolError(f"Expected {event_type} aborted/willRetry to be booleans")
         result_payload = payload.get("result")
         result = None
         if result_payload is not None:
             if not isinstance(result_payload, dict):
-                raise PiProtocolError("Expected auto_compaction_end.result to be an object or null")
+                raise PiProtocolError(f"Expected {event_type}.result to be an object or null")
             details = result_payload.get("details", {})
             if not isinstance(details, dict):
-                raise PiProtocolError("Expected auto_compaction_end.result.details to be an object")
+                raise PiProtocolError(f"Expected {event_type}.result.details to be an object")
             result = CompactionResult(
                 summary=str(result_payload.get("summary", "")),
                 first_kept_entry_id=str(result_payload.get("firstKeptEntryId", "")),
@@ -210,8 +210,8 @@ def parse_event(payload: Any) -> AgentEvent:
             )
         error_message = payload.get("errorMessage")
         if error_message is not None and not isinstance(error_message, str):
-            raise PiProtocolError("Expected auto_compaction_end.errorMessage to be a string when present")
-        return AutoCompactionEndEvent(result=result, aborted=aborted, will_retry=will_retry, error_message=error_message)
+            raise PiProtocolError(f"Expected {event_type}.errorMessage to be a string when present")
+        return AutoCompactionEndEvent(result=result, aborted=aborted, will_retry=will_retry, error_message=error_message, type=event_type)
     if event_type == "auto_retry_start":
         return AutoRetryStartEvent(
             attempt=_require_int(payload, "attempt"),

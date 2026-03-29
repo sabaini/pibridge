@@ -1,27 +1,17 @@
 from __future__ import annotations
 
-import queue
-import time
-
 import pytest
 
 from pi_rpc import PiClient
+from tests.integration.conftest import _prompt_and_get_text
 
 pytestmark = pytest.mark.integration
 
 
-def test_prompt_streams_events(pi_client: PiClient) -> None:
-    subscription = pi_client.subscribe_events(maxsize=200)
-    pi_client.prompt("Reply with exactly: OK")
+def test_prompt_streams_expected_canned_answer(mock_pi_client: PiClient) -> None:
+    assert _prompt_and_get_text(mock_pi_client, "Reply with exactly: OK") == "OK"
 
-    seen_end = False
-    deadline = time.monotonic() + 120
-    while time.monotonic() < deadline:
-        try:
-            event = subscription.get(timeout=1)
-        except queue.Empty:
-            continue
-        if event.type == "agent_end":
-            seen_end = True
-            break
-    assert seen_end
+
+def test_multiple_prompts_return_matching_canned_answers(mock_pi_client: PiClient) -> None:
+    assert _prompt_and_get_text(mock_pi_client, "Respond with the word BRIDGE.") == "BRIDGE"
+    assert _prompt_and_get_text(mock_pi_client, "Respond with the word TESTING.") == "TESTING"

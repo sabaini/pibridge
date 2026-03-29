@@ -6,6 +6,7 @@ from typing import Any
 from pi_rpc.client import PiClient
 from pi_rpc.commands import RpcCommand
 from pi_rpc.models import BashResult, LastAssistantTextResult, SessionTransitionResult
+from pi_rpc.protocol_types import ModelInfo, UsageCost
 from pi_rpc.responses import RpcResponse
 
 
@@ -55,6 +56,39 @@ def test_client_unwraps_cancelled_session_result() -> None:
     assert command.type == "new_session"
     assert command.fields == {"parentSession": "/tmp/parent.jsonl"}
     assert result.cancelled is True
+
+
+def test_client_set_model_serializes_provider_and_model_id() -> None:
+    client = PiClient()
+    fake = FakeProcess(
+        RpcResponse(
+            command="set_model",
+            success=True,
+            data=ModelInfo(
+                id="canned-responses",
+                name="Canned Responses",
+                api="mock-api",
+                provider="pi-rpc-mock",
+                base_url="mock://provider",
+                reasoning=False,
+                input=("text",),
+                context_window=4096,
+                max_tokens=1024,
+                cost=UsageCost(input=0.0, output=0.0, cache_read=0.0, cache_write=0.0, total=0.0),
+            ),
+        )
+    )
+    client._process = fake  # type: ignore[assignment]
+
+    result = client.set_model("pi-rpc-mock", "canned-responses", timeout=1.5)
+
+    command, timeout = fake.calls[-1]
+    assert isinstance(command, RpcCommand)
+    assert command.type == "set_model"
+    assert command.fields == {"provider": "pi-rpc-mock", "modelId": "canned-responses"}
+    assert timeout == 1.5
+    assert result.provider == "pi-rpc-mock"
+    assert result.id == "canned-responses"
 
 
 def test_client_get_last_assistant_text_returns_text() -> None:

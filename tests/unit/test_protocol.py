@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from pi_rpc.commands import RpcCommand, serialize_command
-from pi_rpc.events import MessageUpdateEvent, parse_event
+from pi_rpc.events import AutoCompactionEndEvent, AutoCompactionStartEvent, MessageUpdateEvent, parse_event
 from pi_rpc.exceptions import PiCommandError, PiProtocolError
 from pi_rpc.protocol_types import (
     AssistantMessage,
@@ -131,6 +131,53 @@ def test_parse_response_error_raises_command_error() -> None:
     response = parse_response({"type": "response", "command": "set_model", "success": False, "error": "not found"})
     with pytest.raises(PiCommandError):
         response.raise_for_error()
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_type"),
+    [
+        ({"type": "auto_compaction_start", "reason": "threshold"}, "auto_compaction_start"),
+        ({"type": "compaction_start", "reason": "threshold"}, "compaction_start"),
+    ],
+)
+def test_parse_event_accepts_compaction_start_aliases(payload: dict[str, object], expected_type: str) -> None:
+    event = parse_event(payload)
+    assert isinstance(event, AutoCompactionStartEvent)
+    assert event.reason == "threshold"
+    assert event.type == expected_type
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_type"),
+    [
+        (
+            {
+                "type": "auto_compaction_end",
+                "reason": "threshold",
+                "result": {"summary": "Summary", "firstKeptEntryId": "e1", "tokensBefore": 42, "details": {}},
+                "aborted": False,
+                "willRetry": False,
+            },
+            "auto_compaction_end",
+        ),
+        (
+            {
+                "type": "compaction_end",
+                "reason": "threshold",
+                "result": {"summary": "Summary", "firstKeptEntryId": "e1", "tokensBefore": 42, "details": {}},
+                "aborted": False,
+                "willRetry": False,
+            },
+            "compaction_end",
+        ),
+    ],
+)
+def test_parse_event_accepts_compaction_end_aliases(payload: dict[str, object], expected_type: str) -> None:
+    event = parse_event(payload)
+    assert isinstance(event, AutoCompactionEndEvent)
+    assert event.result is not None
+    assert event.result.summary == "Summary"
+    assert event.type == expected_type
 
 
 def test_parse_event_streaming_message_update_variant() -> None:

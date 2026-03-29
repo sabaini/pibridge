@@ -158,21 +158,30 @@ python -m build
 
 ### Integration tests
 
-Integration tests are opt-in and require:
+Integration tests are opt-in and run a real `pi --mode rpc` subprocess.
+
+By default, the suite loads a bundled test-only extension at `tests/integration/fixtures/mock_provider.ts` and switches to a canned-response mock model after startup, so external model credentials are **not** required.
+
+Default requirements:
 
 - `pi` on `PATH`
-- working provider/model configuration
-- these environment variables:
-  - `PI_RPC_INTEGRATION=1`
-  - `PI_RPC_PROVIDER=<provider>`
-  - `PI_RPC_MODEL=<model>`
+- `PI_RPC_INTEGRATION=1`
 
 Run them with:
 
 ```bash
 . .venv/bin/activate
-pytest -m integration
+PI_RPC_INTEGRATION=1 pytest -m integration
 ```
+
+Optional live-backend override:
+
+- `PI_RPC_PROVIDER=<provider>`
+- `PI_RPC_MODEL=<model>`
+
+When those two variables are set, the generic `pi_client` fixture starts Pi against that real backend instead of the bundled mock path. The dedicated mock-backed assertions still use the canned-response fixture.
+
+The mock provider matches prompts exactly and returns deterministic text for the integration prompts covered by the suite. If a test sends an unmapped prompt, the provider returns a clear `[pi-rpc-mock missing canned response] ...` sentinel so failures are obvious.
 
 If the environment is not configured, the integration suite skips clearly.
 
