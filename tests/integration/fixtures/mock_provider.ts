@@ -15,6 +15,7 @@ const MOCK_MODEL_ID = "canned-responses";
 const MOCK_API = "pi-rpc-mock-api" as Api;
 const MOCK_API_KEY_ENV = "PI_RPC_MOCK_API_KEY";
 const MOCK_PROMPT_MAP_ENV = "PI_RPC_MOCK_PROMPT_MAP";
+const MOCK_CONTEXT_MAP_ENV = "PI_RPC_MOCK_CONTEXT_MAP";
 const MISSING_RESPONSE_PREFIX = "[pi-rpc-mock missing canned response]";
 
 export function getLastUserText(context: Context): string {
@@ -30,23 +31,97 @@ export function getLastUserText(context: Context): string {
 	return "";
 }
 
-export function loadPromptMap(): Record<string, string> {
-	const raw = process.env[MOCK_PROMPT_MAP_ENV];
+function loadResponseMap(envName: string): Record<string, string> {
+	const raw = process.env[envName];
 	if (!raw) return {};
 
 	const parsed = JSON.parse(raw) as unknown;
 	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new Error(`${MOCK_PROMPT_MAP_ENV} must be a JSON object mapping prompts to canned responses`);
+		throw new Error(`${envName} must be a JSON object mapping keys to canned responses`);
 	}
 
-	const promptMap: Record<string, string> = {};
-	for (const [prompt, response] of Object.entries(parsed)) {
+	const responseMap: Record<string, string> = {};
+	for (const [key, response] of Object.entries(parsed)) {
 		if (typeof response !== "string") {
-			throw new Error(`${MOCK_PROMPT_MAP_ENV} values must be strings; got ${typeof response} for prompt ${JSON.stringify(prompt)}`);
+			throw new Error(`${envName} values must be strings; got ${typeof response} for key ${JSON.stringify(key)}`);
 		}
-		promptMap[prompt] = response;
+		responseMap[key] = response;
 	}
-	return promptMap;
+	return responseMap;
+}
+
+export function loadPromptMap(): Record<string, string> {
+	return loadResponseMap(MOCK_PROMPT_MAP_ENV);
+}
+
+export function loadContextMap(): Record<string, string> {
+	return loadResponseMap(MOCK_CONTEXT_MAP_ENV);
+}
+
+function stableStringify(value: unknown): string {
+	if (Array.isArray(value)) {
+		return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+	}
+	if (value && typeof value === "object") {
+		const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right));
+		return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`).join(",")}}`;
+	}
+	return JSON.stringify(value);
+}
+
+function textContentToString(content: string | Array<{ type: string; text?: string }>): string {
+	if (typeof content === "string") return content;
+	return content
+		.filter((block) => block.type === "text")
+		.map((block) => block.text ?? "")
+		.join("");
+}
+
+function assistantContentToString(content: AssistantMessage["content"]): string {
+	return content
+		.map((block) => {
+			if (block.type === "text") return block.text;
+			if (block.type === "thinking") return `<thinking>${block.thinking}</thinking>`;
+			return `<toolCall:${block.name}>${JSON.stringify(block.arguments)}`;
+		})
+		.join("");
+}
+
+function getSimplifiedMessages(context: Context): Array<Record<string, string>> {
+	return context.messages.map((message) => {
+		if (message.role === "user") {
+			return { content: textContentToString(message.content), role: message.role };
+		}
+		if (message.role === "assistant") {
+			return { content: assistantContentToString(message.content), role: message.role };
+		}
+		return { content: textContentToString(message.content), role: message.role, toolName: message.toolName };
+	});
+}
+
+export function getContextKey(context: Context): string {
+	return stableStringify(getSimplifiedMessages(context));
+}
+
+function getContextResponse(context: Context): string | undefined {
+	const simplifiedMessages = getSimplifiedMessages(context);
+	const entries = Object.entries(loadContextMap())
+		.map(([serializedMessages, response]) => {
+			const parsed = JSON.parse(serializedMessages) as unknown;
+			if (!Array.isArray(parsed)) {
+				throw new Error(`${MOCK_CONTEXT_MAP_ENV} keys must serialize message arrays`);
+			}
+			return { messages: parsed, response };
+		})
+		.sort((left, right) => right.messages.length - left.messages.length);
+	for (const entry of entries) {
+		if (entry.messages.length > simplifiedMessages.length) continue;
+		const actualSuffix = simplifiedMessages.slice(-entry.messages.length);
+		if (stableStringify(actualSuffix) === stableStringify(entry.messages)) {
+			return entry.response;
+		}
+	}
+	return undefined;
 }
 
 export function streamMockProvider(model: Model<Api>, context: Context, options?: SimpleStreamOptions): AssistantMessageEventStream {
@@ -77,7 +152,7 @@ export function streamMockProvider(model: Model<Api>, context: Context, options?
 			}
 
 			const prompt = getLastUserText(context);
-			const responseText = loadPromptMap()[prompt] ?? `${MISSING_RESPONSE_PREFIX} ${prompt}`;
+			const responseText = getContextResponse(context) ?? loadPromptMap()[prompt] ?? `${MISSING_RESPONSE_PREFIX} ${prompt}`;
 
 			stream.push({ type: "start", partial: output });
 			output.content.push({ type: "text", text: "" });

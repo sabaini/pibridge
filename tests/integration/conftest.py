@@ -17,6 +17,7 @@ MOCK_PROVIDER_NAME = "pi-rpc-mock"
 MOCK_MODEL_ID = "canned-responses"
 MOCK_API_KEY_ENV = "PI_RPC_MOCK_API_KEY"
 MOCK_PROMPT_MAP_ENV = "PI_RPC_MOCK_PROMPT_MAP"
+MOCK_CONTEXT_MAP_ENV = "PI_RPC_MOCK_CONTEXT_MAP"
 MOCK_EXTENSION_PATH = Path(__file__).resolve().parent / "fixtures" / "mock_provider.ts"
 DEFAULT_MOCK_PROMPT_MAP = {
     "Reply with exactly: OK": "OK",
@@ -56,6 +57,56 @@ def command_timeout() -> float:
     return float(os.environ.get("PI_RPC_COMMAND_TIMEOUT", "120"))
 
 
+@pytest.fixture(scope="session")
+def mock_context_map() -> dict[str, str]:
+    return {}
+
+
+def _text_content(content: str | list[dict[str, str]]) -> str:
+    if isinstance(content, str):
+        return content
+    return "".join(block["text"] for block in content if block.get("type") == "text")
+
+
+def mock_user_message(content: str | list[dict[str, str]]) -> dict[str, str]:
+    return {"role": "user", "content": _text_content(content)}
+
+
+def mock_assistant_message(content: str) -> dict[str, str]:
+    return {"role": "assistant", "content": content}
+
+
+def mock_tool_result_message(tool_name: str, content: str) -> dict[str, str]:
+    return {"role": "toolResult", "toolName": tool_name, "content": content}
+
+
+def mock_context_key(*messages: dict[str, str]) -> str:
+    return json.dumps(list(messages), sort_keys=True, separators=(",", ":"))
+
+
+def bash_execution_context_text(
+    command: str,
+    output: str,
+    *,
+    exit_code: int | None = 0,
+    cancelled: bool = False,
+    truncated: bool = False,
+    full_output_path: str | None = None,
+) -> str:
+    text = f"Ran `{command}`\n"
+    if output:
+        text += f"```\n{output}\n```"
+    else:
+        text += "(no output)"
+    if cancelled:
+        text += "\n\n(command cancelled)"
+    elif exit_code not in (None, 0):
+        text += f"\n\nCommand exited with code {exit_code}"
+    if truncated and full_output_path:
+        text += f"\n\n[Output truncated. Full output: {full_output_path}]"
+    return text
+
+
 @pytest.fixture
 def isolated_pi_workspace(tmp_path: Path) -> Path:
     workspace = tmp_path / "workspace"
@@ -63,10 +114,11 @@ def isolated_pi_workspace(tmp_path: Path) -> Path:
     return workspace
 
 
-def _mock_env(prompt_map: Mapping[str, str]) -> dict[str, str]:
+def _mock_env(prompt_map: Mapping[str, str], context_map: Mapping[str, str]) -> dict[str, str]:
     return {
         MOCK_API_KEY_ENV: "pi-rpc-mock-test-key",
         MOCK_PROMPT_MAP_ENV: json.dumps(dict(prompt_map), sort_keys=True),
+        MOCK_CONTEXT_MAP_ENV: json.dumps(dict(context_map), sort_keys=True),
     }
 
 
@@ -99,6 +151,7 @@ def pi_client(
     isolated_pi_workspace: Path,
     command_timeout: float,
     mock_prompt_map: dict[str, str],
+    mock_context_map: dict[str, str],
 ) -> Iterator[PiClient]:
     if _live_override_enabled():
         client = _make_client(
@@ -112,7 +165,7 @@ def pi_client(
             workspace=isolated_pi_workspace,
             command_timeout=command_timeout,
             extra_args=("-e", str(MOCK_EXTENSION_PATH)),
-            env=_mock_env(mock_prompt_map),
+            env=_mock_env(mock_prompt_map, mock_context_map),
         )
     with client:
         yield client
@@ -124,12 +177,13 @@ def mock_pi_client(
     isolated_pi_workspace: Path,
     command_timeout: float,
     mock_prompt_map: dict[str, str],
+    mock_context_map: dict[str, str],
 ) -> Iterator[PiClient]:
     client = _make_client(
         workspace=isolated_pi_workspace,
         command_timeout=command_timeout,
         extra_args=("-e", str(MOCK_EXTENSION_PATH)),
-        env=_mock_env(mock_prompt_map),
+        env=_mock_env(mock_prompt_map, mock_context_map),
     )
     with client:
         available_models = client.get_available_models()

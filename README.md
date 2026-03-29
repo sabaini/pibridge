@@ -181,7 +181,7 @@ Optional live-backend override:
 
 When those two variables are set, the generic `pi_client` fixture starts Pi against that real backend instead of the bundled mock path. The dedicated mock-backed assertions still use the canned-response fixture.
 
-The mock provider matches prompts exactly and returns deterministic text for the integration prompts covered by the suite. If a test sends an unmapped prompt, the provider returns a clear `[pi-rpc-mock missing canned response] ...` sentinel so failures are obvious.
+The mock provider can match either an exact last-user prompt or an exact trailing context sequence, which lets the suite assert multi-turn history and “bash output reaches the next prompt” behavior deterministically. If a test sends an unmapped prompt/context, the provider returns a clear `[pi-rpc-mock missing canned response] ...` sentinel so failures are obvious.
 
 If the environment is not configured, the integration suite skips clearly.
 
