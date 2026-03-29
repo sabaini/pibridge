@@ -22,6 +22,7 @@ from .protocol_types import (
     parse_model,
     parse_rpc_slash_command,
     parse_session_state,
+    parse_thinking_level_value,
 )
 
 T = TypeVar("T")
@@ -110,10 +111,10 @@ def parse_response(payload: Any) -> RpcResponse[Any]:
             if not isinstance(data, dict):
                 raise PiProtocolError("Expected cycle_model data to be null or an object")
             model = parse_model(data.get("model"))
-            thinking_level = data.get("thinkingLevel")
+            thinking_level = parse_thinking_level_value(data.get("thinkingLevel"), "cycle_model.data.thinkingLevel")
             is_scoped = data.get("isScoped")
-            if not isinstance(thinking_level, str) or not isinstance(is_scoped, bool):
-                raise PiProtocolError("Invalid cycle_model payload")
+            if not isinstance(is_scoped, bool):
+                raise PiProtocolError("Expected cycle_model.data.isScoped to be a boolean")
             parsed = CycleModelResult(model=model, thinking_level=thinking_level, is_scoped=is_scoped)
     elif command == "get_available_models":
         if not isinstance(data, dict) or not isinstance(data.get("models"), list):
@@ -123,9 +124,9 @@ def parse_response(payload: Any) -> RpcResponse[Any]:
         if data is None:
             parsed = None
         else:
-            if not isinstance(data, dict) or not isinstance(data.get("level"), str):
-                raise PiProtocolError("Expected cycle_thinking_level data.level to be a string")
-            parsed = CycleThinkingLevelResult(level=data["level"])
+            if not isinstance(data, dict):
+                raise PiProtocolError("Expected cycle_thinking_level data to be an object")
+            parsed = CycleThinkingLevelResult(level=parse_thinking_level_value(data.get("level"), "cycle_thinking_level.data.level"))
     elif command == "compact":
         if not isinstance(data, dict):
             raise PiProtocolError("Expected compact data to be an object")

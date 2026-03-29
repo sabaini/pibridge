@@ -5,9 +5,9 @@ from io import BytesIO
 
 import pytest
 
-pytest.importorskip("pandas")
-
 from tests.example_support import load_dataset_triage_module
+
+pytest.importorskip("pandas")
 
 loader = load_dataset_triage_module("loader")
 models = load_dataset_triage_module("models")

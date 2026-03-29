@@ -7,6 +7,7 @@ import shutil
 import time
 from collections.abc import Iterator, Mapping
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -112,7 +113,7 @@ def isolated_pi_workspace(tmp_path: Path) -> Path:
     return workspace
 
 
-def _mock_env(prompt_map: Mapping[str, str], context_map: Mapping[str, str]) -> dict[str, str]:
+def _mock_env(prompt_map: Mapping[str, Any], context_map: Mapping[str, Any]) -> dict[str, str]:
     return {
         MOCK_API_KEY_ENV: "pi-rpc-mock-test-key",
         MOCK_PROMPT_MAP_ENV: json.dumps(dict(prompt_map), sort_keys=True),
@@ -209,6 +210,21 @@ def _wait_for_agent_end(subscription: queue.Queue[AgentEvent], timeout: float = 
         if event.type == "agent_end":
             return event
     raise AssertionError(f"timed out waiting for agent_end; last event: {last_event!r}")
+
+
+def _wait_for_event(subscription: queue.Queue[AgentEvent], event_type: str, timeout: float = 120.0) -> AgentEvent:
+    deadline = time.monotonic() + timeout
+    last_event: AgentEvent | None = None
+    while time.monotonic() < deadline:
+        remaining = max(0.1, min(1.0, deadline - time.monotonic()))
+        try:
+            event = subscription.get(timeout=remaining)
+        except queue.Empty:
+            continue
+        last_event = event
+        if event.type == event_type:
+            return event
+    raise AssertionError(f"timed out waiting for {event_type}; last event: {last_event!r}")
 
 
 def _prompt_and_get_text(client: PiClient, prompt: str, timeout: float = 120.0) -> str:

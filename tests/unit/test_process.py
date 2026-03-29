@@ -12,7 +12,7 @@ import pytest
 
 from pi_rpc.commands import make_command
 from pi_rpc.events import AgentStartEvent
-from pi_rpc.exceptions import PiCommandError, PiProcessExitedError, PiTimeoutError
+from pi_rpc.exceptions import PiCommandError, PiProcessExitedError, PiStartupError, PiTimeoutError
 from pi_rpc.jsonl import JsonlReader, serialize_json_line
 from pi_rpc.models import PiClientOptions
 from pi_rpc.process import PiProcess
@@ -113,6 +113,31 @@ class FakeChildProcess:
         return self._returncode
 
 
+def state_response(request_id: str, session_id: str = "session") -> dict[str, Any]:
+    return {
+        "id": request_id,
+        "type": "response",
+        "command": "get_state",
+        "success": True,
+        "data": {
+            "model": None,
+            "thinkingLevel": "medium",
+            "isStreaming": False,
+            "isCompacting": False,
+            "steeringMode": "all",
+            "followUpMode": "one-at-a-time",
+            "sessionId": session_id,
+            "autoCompactionEnabled": True,
+            "messageCount": 0,
+            "pendingMessageCount": 0,
+        },
+    }
+
+
+def success_response(request_id: str, command: str) -> dict[str, Any]:
+    return {"id": request_id, "type": "response", "command": command, "success": True}
+
+
 def make_process(children: list[FakeChildProcess]) -> PiProcess:
     def factory(*args: Any, **kwargs: Any) -> FakeChildProcess:
         child = FakeChildProcess()
@@ -122,12 +147,19 @@ def make_process(children: list[FakeChildProcess]) -> PiProcess:
     return PiProcess(PiClientOptions(process_factory=factory, command_timeout=0.2, idle_timeout=None))
 
 
-def test_process_starts_lazily_and_routes_response() -> None:
+def test_process_starts_lazily_runs_startup_probe_and_routes_response() -> None:
     children: list[FakeChildProcess] = []
 
     def factory(*args: Any, **kwargs: Any) -> FakeChildProcess:
         child = FakeChildProcess()
-        child.on_command = lambda payload: child.send_record({"id": payload["id"], "type": "response", "command": payload["type"], "success": True})
+
+        def on_command(payload: dict[str, Any]) -> None:
+            if payload["type"] == "get_state":
+                child.send_record(state_response(payload["id"], "startup-ready"))
+                return
+            child.send_record(success_response(payload["id"], payload["type"]))
+
+        child.on_command = on_command
         children.append(child)
         return child
 
@@ -137,8 +169,51 @@ def test_process_starts_lazily_and_routes_response() -> None:
     response = process.send_command(make_command("prompt", message="hello"))
 
     assert len(children) == 1
-    assert children[0].commands[0]["type"] == "prompt"
+    assert [command["type"] for command in children[0].commands] == ["get_state", "prompt"]
     assert response.command == "prompt"
+
+
+def test_cold_start_times_out_when_startup_probe_never_completes() -> None:
+    children: list[FakeChildProcess] = []
+
+    def factory(*args: Any, **kwargs: Any) -> FakeChildProcess:
+        child = FakeChildProcess()
+        children.append(child)
+        return child
+
+    process = PiProcess(PiClientOptions(process_factory=factory, startup_timeout=0.01, command_timeout=0.2, idle_timeout=None))
+
+    with pytest.raises(PiStartupError, match="startup readiness"):
+        process.send_command(make_command("get_state"))
+
+    assert len(children) == 1
+    assert [command["type"] for command in children[0].commands] == ["get_state"]
+
+
+def test_cold_start_uses_command_timeout_after_startup_probe_succeeds() -> None:
+    children: list[FakeChildProcess] = []
+
+    def factory(*args: Any, **kwargs: Any) -> FakeChildProcess:
+        child = FakeChildProcess()
+        command_count = 0
+
+        def on_command(payload: dict[str, Any]) -> None:
+            nonlocal command_count
+            command_count += 1
+            if command_count == 1:
+                threading.Timer(0.005, lambda: child.send_record(state_response(payload["id"], "ready"))).start()
+
+        child.on_command = on_command
+        children.append(child)
+        return child
+
+    process = PiProcess(PiClientOptions(process_factory=factory, startup_timeout=0.05, command_timeout=0.01, idle_timeout=None))
+
+    with pytest.raises(PiTimeoutError, match="get_state"):
+        process.send_command(make_command("get_state"))
+
+    assert len(children) == 1
+    assert [command["type"] for command in children[0].commands] == ["get_state", "get_state"]
 
 
 def test_process_fans_out_events_and_tracks_active_workflow() -> None:
@@ -148,7 +223,7 @@ def test_process_fans_out_events_and_tracks_active_workflow() -> None:
 
     def on_command(payload: dict[str, Any]) -> None:
         child = children[0]
-        child.send_record({"id": payload["id"], "type": "response", "command": payload["type"], "success": True})
+        child.send_record(success_response(payload["id"], payload["type"]))
         child.send_record({"type": "agent_start"})
         child.send_record({"type": "agent_end", "messages": []})
 
@@ -177,26 +252,7 @@ def test_process_forwards_extra_args_into_spawned_argv() -> None:
         nonlocal captured_argv
         child = FakeChildProcess()
         captured_argv = args[0]
-        child.on_command = lambda payload: child.send_record(
-            {
-                "id": payload["id"],
-                "type": "response",
-                "command": payload["type"],
-                "success": True,
-                "data": {
-                    "model": None,
-                    "thinkingLevel": "medium",
-                    "isStreaming": False,
-                    "isCompacting": False,
-                    "steeringMode": "all",
-                    "followUpMode": "one-at-a-time",
-                    "sessionId": "argv-test",
-                    "autoCompactionEnabled": True,
-                    "messageCount": 0,
-                    "pendingMessageCount": 0,
-                },
-            }
-        )
+        child.on_command = lambda payload: child.send_record(state_response(payload["id"], "argv-test"))
         return child
 
     process = PiProcess(
@@ -222,26 +278,7 @@ def test_process_overlays_child_environment(monkeypatch: pytest.MonkeyPatch) -> 
         env = kwargs["env"]
         assert isinstance(env, dict)
         captured_env.update(env)
-        child.on_command = lambda payload: child.send_record(
-            {
-                "id": payload["id"],
-                "type": "response",
-                "command": payload["type"],
-                "success": True,
-                "data": {
-                    "model": None,
-                    "thinkingLevel": "medium",
-                    "isStreaming": False,
-                    "isCompacting": False,
-                    "steeringMode": "all",
-                    "followUpMode": "one-at-a-time",
-                    "sessionId": "env-test",
-                    "autoCompactionEnabled": True,
-                    "messageCount": 0,
-                    "pendingMessageCount": 0,
-                },
-            }
-        )
+        child.on_command = lambda payload: child.send_record(state_response(payload["id"], "env-test"))
         return child
 
     process = PiProcess(
@@ -266,26 +303,6 @@ def test_late_response_after_timeout_does_not_poison_client() -> None:
     process._ensure_started_locked()  # type: ignore[attr-defined]
     child = children[0]
     timed_out_request_id: str | None = None
-
-    def state_response(request_id: str, session_id: str) -> dict[str, Any]:
-        return {
-            "id": request_id,
-            "type": "response",
-            "command": "get_state",
-            "success": True,
-            "data": {
-                "model": None,
-                "thinkingLevel": "medium",
-                "isStreaming": False,
-                "isCompacting": False,
-                "steeringMode": "all",
-                "followUpMode": "one-at-a-time",
-                "sessionId": session_id,
-                "autoCompactionEnabled": True,
-                "messageCount": 0,
-                "pendingMessageCount": 0,
-            },
-        }
 
     def on_command(payload: dict[str, Any]) -> None:
         nonlocal timed_out_request_id
@@ -331,38 +348,24 @@ def test_timed_out_prompt_exit_still_fails_event_subscriptions() -> None:
         subscription.get(timeout=0.2)
 
 
-
 def test_failed_idle_prompt_does_not_poison_idle_restart() -> None:
     children: list[FakeChildProcess] = []
 
     def factory(*args: Any, **kwargs: Any) -> FakeChildProcess:
         child = FakeChildProcess()
         index = len(children)
-        if index == 0:
-            child.on_command = lambda payload: child.send_record(
-                {"id": payload["id"], "type": "response", "command": payload["type"], "success": False, "error": "bad prompt"}
-            )
-        else:
-            child.on_command = lambda payload: child.send_record(
-                {
-                    "id": payload["id"],
-                    "type": "response",
-                    "command": payload["type"],
-                    "success": True,
-                    "data": {
-                        "model": None,
-                        "thinkingLevel": "medium",
-                        "isStreaming": False,
-                        "isCompacting": False,
-                        "steeringMode": "all",
-                        "followUpMode": "one-at-a-time",
-                        "sessionId": "restarted",
-                        "autoCompactionEnabled": True,
-                        "messageCount": 0,
-                        "pendingMessageCount": 0,
-                    },
-                }
-            )
+
+        def on_command(payload: dict[str, Any]) -> None:
+            if payload["type"] == "get_state":
+                session_id = f"probe-{index}" if len(child.commands) == 1 else "restarted"
+                child.send_record(state_response(payload["id"], session_id))
+                return
+            if index == 0:
+                child.send_record({"id": payload["id"], "type": "response", "command": payload["type"], "success": False, "error": "bad prompt"})
+            else:
+                child.send_record(success_response(payload["id"], payload["type"]))
+
+        child.on_command = on_command
         children.append(child)
         return child
 
@@ -382,7 +385,6 @@ def test_failed_idle_prompt_does_not_poison_idle_restart() -> None:
     assert len(children) == 2
 
 
-
 def test_process_restarts_after_idle_exit() -> None:
     children: list[FakeChildProcess] = []
 
@@ -392,27 +394,8 @@ def test_process_restarts_after_idle_exit() -> None:
         session_id = "a" if index == 0 else "b"
 
         def on_command(payload: dict[str, Any]) -> None:
-            child.send_record(
-                {
-                    "id": payload["id"],
-                    "type": "response",
-                    "command": payload["type"],
-                    "success": True,
-                    "data": {
-                        "model": None,
-                        "thinkingLevel": "medium",
-                        "isStreaming": False,
-                        "isCompacting": False,
-                        "steeringMode": "all",
-                        "followUpMode": "one-at-a-time",
-                        "sessionId": session_id,
-                        "autoCompactionEnabled": True,
-                        "messageCount": 0,
-                        "pendingMessageCount": 0,
-                    },
-                }
-            )
-            if index == 0:
+            child.send_record(state_response(payload["id"], session_id))
+            if index == 0 and len(child.commands) >= 2:
                 child.exit(0)
 
         child.on_command = on_command
@@ -426,6 +409,8 @@ def test_process_restarts_after_idle_exit() -> None:
 
     assert first_response.command == "get_state"
     assert next_response.command == "get_state"
+    assert first_response.data.session_id == "a"
+    assert next_response.data.session_id == "b"
     assert len(children) == 2
 
 
@@ -436,7 +421,7 @@ def test_process_exit_during_active_workflow_fails_subscriptions() -> None:
 
     def on_command(payload: dict[str, Any]) -> None:
         child = children[0]
-        child.send_record({"id": payload["id"], "type": "response", "command": payload["type"], "success": True})
+        child.send_record(success_response(payload["id"], payload["type"]))
         child.send_record({"type": "agent_start"})
         child.exit(1)
 

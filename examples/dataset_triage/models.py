@@ -36,6 +36,10 @@ class ColumnProfile:
     notes: tuple[str, ...] = ()
     numeric_summary: dict[str, float | int | None] | None = None
     top_values: tuple[tuple[str, int], ...] = ()
+    identifier_like: bool = False
+    sensitive: bool = False
+    share_raw_values: bool = True
+    sensitivity_reasons: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -47,4 +51,5 @@ class DatasetProfile:
     categorical_top_values: dict[str, tuple[tuple[str, int], ...]] = field(default_factory=dict)
     columns_profile: tuple[ColumnProfile, ...] = ()
     suspicious_columns: tuple[ColumnProfile, ...] = ()
+    sensitive_columns: tuple[ColumnProfile, ...] = ()
     details: dict[str, Any] = field(default_factory=dict)

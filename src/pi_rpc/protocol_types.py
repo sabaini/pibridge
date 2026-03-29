@@ -1,9 +1,45 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, cast
+from typing import Any, Literal, TypeVar, cast
 
 from .exceptions import PiProtocolError
+
+ThinkingLevelValues: tuple[Literal["off", "minimal", "low", "medium", "high", "xhigh"], ...] = ("off", "minimal", "low", "medium", "high", "xhigh")
+QueueModeValues: tuple[Literal["all", "one-at-a-time"], ...] = ("all", "one-at-a-time")
+AssistantStopReasonValues: tuple[Literal["stop", "length", "toolUse", "error", "aborted"], ...] = ("stop", "length", "toolUse", "error", "aborted")
+AssistantEventTypeValues: tuple[
+    Literal[
+        "start",
+        "text_start",
+        "text_delta",
+        "text_end",
+        "thinking_start",
+        "thinking_delta",
+        "thinking_end",
+        "toolcall_start",
+        "toolcall_delta",
+        "toolcall_end",
+        "done",
+        "error",
+    ],
+    ...,
+] = (
+    "start",
+    "text_start",
+    "text_delta",
+    "text_end",
+    "thinking_start",
+    "thinking_delta",
+    "thinking_end",
+    "toolcall_start",
+    "toolcall_delta",
+    "toolcall_end",
+    "done",
+    "error",
+)
+SlashCommandSourceValues: tuple[Literal["extension", "prompt", "skill"], ...] = ("extension", "prompt", "skill")
+SlashCommandLocationValues: tuple[Literal["user", "project", "path"], ...] = ("user", "project", "path")
 
 ThinkingLevel = Literal["off", "minimal", "low", "medium", "high", "xhigh"]
 QueueMode = Literal["all", "one-at-a-time"]
@@ -203,7 +239,7 @@ class AssistantMessageEvent:
     delta: str | None = None
     content: str | None = None
     tool_call: ToolCall | None = None
-    reason: str | None = None
+    reason: AssistantStopReason | None = None
     message: AssistantMessage | None = None
     error: AssistantMessage | None = None
 
@@ -221,10 +257,22 @@ class ExtensionUiRequest:
     payload: dict[str, Any] = field(default_factory=dict)
 
 
+_LiteralString = TypeVar("_LiteralString", bound=str)
+
+
 def _expect_type(value: Any, expected: type, field_name: str) -> Any:
     if not isinstance(value, expected):
         raise PiProtocolError(f"Expected {field_name} to be {expected.__name__}, got {type(value).__name__}")
     return value
+
+
+def _require_literal_value(value: Any, allowed: tuple[_LiteralString, ...], field_name: str) -> _LiteralString:
+    if not isinstance(value, str):
+        raise PiProtocolError(f"Expected {field_name} to be a string")
+    if value not in allowed:
+        allowed_values = ", ".join(repr(item) for item in allowed)
+        raise PiProtocolError(f"Unsupported {field_name}: {value!r}; expected one of {allowed_values}")
+    return cast(_LiteralString, value)
 
 
 def _require_mapping(payload: Any, label: str = "payload") -> dict[str, Any]:
@@ -270,6 +318,22 @@ def _optional_int(payload: dict[str, Any], key: str) -> int | None:
     if not isinstance(value, int) or isinstance(value, bool):
         raise PiProtocolError(f"Expected '{key}' to be an integer when present")
     return value
+
+
+def parse_thinking_level_value(value: Any, field_name: str) -> ThinkingLevel:
+    return _require_literal_value(value, ThinkingLevelValues, field_name)
+
+
+def parse_queue_mode_value(value: Any, field_name: str) -> QueueMode:
+    return _require_literal_value(value, QueueModeValues, field_name)
+
+
+def parse_assistant_stop_reason_value(value: Any, field_name: str) -> AssistantStopReason:
+    return _require_literal_value(value, AssistantStopReasonValues, field_name)
+
+
+def parse_assistant_event_type_value(value: Any, field_name: str) -> AssistantEventType:
+    return _require_literal_value(value, AssistantEventTypeValues, field_name)
 
 
 def _require_list(payload: dict[str, Any], key: str) -> list[Any]:
@@ -505,7 +569,7 @@ def parse_agent_message(payload: Any) -> AgentMessage:
             provider=_require_str(payload, "provider"),
             model=_require_str(payload, "model"),
             usage=parse_usage(payload.get("usage", {})),
-            stop_reason=_expect_type(payload.get("stopReason"), str, "stopReason"),
+            stop_reason=parse_assistant_stop_reason_value(payload.get("stopReason"), "stopReason"),
             timestamp=_require_int(payload, "timestamp"),
             response_id=_optional_str(payload, "responseId"),
             error_message=_optional_str(payload, "errorMessage"),
@@ -634,15 +698,14 @@ def serialize_agent_message(message: AgentMessage) -> dict[str, Any]:
 
 def parse_rpc_slash_command(payload: Any) -> RpcSlashCommand:
     payload = _require_mapping(payload, "slash command")
-    source = _require_str(payload, "source")
-    location = payload.get("location")
-    if location is not None and not isinstance(location, str):
-        raise PiProtocolError("Expected 'location' to be a string when present")
+    source = _require_literal_value(payload.get("source"), SlashCommandSourceValues, "source")
+    location_raw = payload.get("location")
+    location = None if location_raw is None else _require_literal_value(location_raw, SlashCommandLocationValues, "location")
     return RpcSlashCommand(
         name=_require_str(payload, "name"),
         description=_optional_str(payload, "description"),
-        source=cast(Literal["extension", "prompt", "skill"], source),
-        location=cast(Literal["user", "project", "path"] | None, location),
+        source=source,
+        location=location,
         path=_optional_str(payload, "path"),
     )
 
@@ -664,11 +727,11 @@ def parse_session_state(payload: Any) -> RpcSessionState:
     model = None if model_payload is None else parse_model(model_payload)
     return RpcSessionState(
         model=model,
-        thinking_level=cast(ThinkingLevel, _require_str(payload, "thinkingLevel")),
+        thinking_level=parse_thinking_level_value(payload.get("thinkingLevel"), "thinkingLevel"),
         is_streaming=_require_bool(payload, "isStreaming"),
         is_compacting=_require_bool(payload, "isCompacting"),
-        steering_mode=cast(QueueMode, _require_str(payload, "steeringMode")),
-        follow_up_mode=cast(QueueMode, _require_str(payload, "followUpMode")),
+        steering_mode=parse_queue_mode_value(payload.get("steeringMode"), "steeringMode"),
+        follow_up_mode=parse_queue_mode_value(payload.get("followUpMode"), "followUpMode"),
         session_file=_optional_str(payload, "sessionFile"),
         session_id=_require_str(payload, "sessionId"),
         session_name=_optional_str(payload, "sessionName"),
@@ -700,7 +763,7 @@ def serialize_session_state(state: RpcSessionState) -> dict[str, Any]:
 
 def parse_assistant_message_event(payload: Any) -> AssistantMessageEvent:
     payload = _require_mapping(payload, "assistant message event")
-    event_type = _require_str(payload, "type")
+    event_type = parse_assistant_event_type_value(payload.get("type"), "assistantMessageEvent.type")
     partial_payload = payload.get("partial")
     partial = None if partial_payload is None else parse_agent_message(partial_payload)
     if partial is not None and not isinstance(partial, AssistantMessage):
@@ -715,13 +778,13 @@ def parse_assistant_message_event(payload: Any) -> AssistantMessageEvent:
     if error is not None and not isinstance(error, AssistantMessage):
         raise PiProtocolError("Expected assistantMessageEvent.error to be an assistant message")
     return AssistantMessageEvent(
-        type=cast(AssistantEventType, event_type),
+        type=event_type,
         partial=partial,
         content_index=payload.get("contentIndex") if isinstance(payload.get("contentIndex"), int) else None,
         delta=payload.get("delta") if isinstance(payload.get("delta"), str) else None,
         content=payload.get("content") if isinstance(payload.get("content"), str) else None,
         tool_call=None if tool_call_payload is None else parse_tool_call(tool_call_payload),
-        reason=payload.get("reason") if isinstance(payload.get("reason"), str) else None,
+        reason=None if payload.get("reason") is None else parse_assistant_stop_reason_value(payload.get("reason"), "assistantMessageEvent.reason"),
         message=message,
         error=error,
     )

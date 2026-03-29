@@ -44,6 +44,9 @@ def main() -> None:
 
     loaded_dataset = state["loaded_dataset"]
     dataset_profile = state["dataset_profile"]
+    analysis_prompt = None
+    if loaded_dataset is not None and dataset_profile is not None:
+        analysis_prompt = build_initial_analysis_prompt(dataset_profile, dataset_name=loaded_dataset.upload.name)
 
     if state["analysis_error"]:
         st.error(state["analysis_error"])
@@ -71,6 +74,12 @@ def main() -> None:
         else:
             st.success("No suspicious columns were flagged by the deterministic heuristics.")
 
+    st.subheader("What Pi receives")
+    st.caption("Pi receives the bounded prompt below, not the full raw dataframe. Raw categorical values for flagged sensitive columns are redacted by default.")
+    if analysis_prompt is not None:
+        with st.expander("Preview the exact prompt sent to Pi", expanded=False):
+            st.code(analysis_prompt, language="markdown")
+
     st.subheader("Conversation")
     for message in state["conversation_history"]:
         with st.chat_message(message["role"]):
@@ -84,10 +93,10 @@ def main() -> None:
 
     analyze_disabled = state["analysis_running"]
     if st.button("Analyze with Pi", disabled=analyze_disabled, type="primary", use_container_width=True):
-        prompt = build_initial_analysis_prompt(dataset_profile, dataset_name=loaded_dataset.upload.name)
+        assert analysis_prompt is not None
         state["conversation_history"].append({"role": "user", "text": "Analyze the uploaded dataset."})
         _run_streamed_request(
-            lambda on_update: state["controller"].analyze_profile(prompt, on_update=on_update),
+            lambda on_update: state["controller"].analyze_profile(analysis_prompt, on_update=on_update),
             dataset_name=loaded_dataset.upload.name or "uploaded.csv",
             placeholder=stream_placeholder,
             history=state["conversation_history"],

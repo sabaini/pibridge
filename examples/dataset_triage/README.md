@@ -1,6 +1,6 @@
 # Dataset Triage Assistant
 
-A small Streamlit app that profiles an uploaded CSV or gzipped CSV (`.csv.gz`) locally with `pandas`, sends a compact summary to Pi through `pi-rpc-python`, streams Pi's analysis back into the UI, and keeps follow-up questions in the same Pi session.
+A small Streamlit app that profiles an uploaded CSV or gzipped CSV (`.csv.gz`) locally with `pandas`, sends a compact redacted summary to Pi through `pi-rpc-python`, streams Pi's analysis back into the UI, and keeps follow-up questions in the same Pi session.
 
 ## Prerequisites
 
@@ -50,18 +50,21 @@ Then upload a CSV such as `examples/dataset_triage/sample_data/customers.csv`, o
 3. Click **Analyze with Pi** to start a fresh dataset-scoped Pi session.
 4. Watch the response stream into the UI.
 5. Ask a follow-up question such as `Which three columns should I clean first?`.
+   The example uses `prompt(..., streaming_behavior="followUp")`, which is the verified streaming follow-up path in the current compatibility suite.
 6. Upload a different file or press **Reset conversation** to start a fresh session.
 
 ## What Pi receives
 
-The app does **not** send the full raw dataset by default. It sends a bounded summary with:
+The app does **not** send the full raw dataset by default. It shows the exact prompt in the UI and sends only a bounded summary with:
 
 - dataset dimensions
 - duplicate row counts
 - dtype overview
 - highest-missing columns
 - suspicious-column heuristics
-- compact numeric and categorical highlights
+- compact numeric highlights
+- categorical highlights only for non-sensitive columns
+- redacted placeholders plus heuristic notes for likely sensitive columns such as IDs and emails
 
 ## Known limits
 

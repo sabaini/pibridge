@@ -75,6 +75,8 @@ Relevant documented startup options include `--provider`, `--model`, `--no-sessi
 
 The Python wrapper may also accept host-side `cwd`/`env` options for subprocess launch, but `env` should behave as an overlay on top of the inherited environment rather than forcing callers to reconstruct `PATH`, auth variables, and other ambient process state manually.
 
+Cold start should have its own honest deadline. In the shipped client that means `startup_timeout` bounds a lazy-start readiness probe (`get_state`) before the caller's actual first command is written; once that readiness probe succeeds, the normal per-command `command_timeout` budget still applies to the real command.
+
 Lifecycle:
 
 * import does nothing
@@ -154,6 +156,8 @@ Examples of first-class methods:
 A generic low-level `send_command()` may exist, but the primary API should mirror protocol commands directly.
 
 Higher-level convenience workflows may be added later in a separate layer, but they are not the primary surface.
+
+One important compatibility note from the current integration suite: `prompt(..., streaming_behavior="followUp")` is the verified way to continue a streamed turn immediately. On the tested upstream build, raw `follow_up()` and `steer()` requests are accepted but remain queued in session state instead of reliably starting an immediate streamed turn on their own.
 
 ## 10. Transport and framing
 
@@ -276,7 +280,7 @@ The protocol itself models failed commands as normal response objects with `succ
 
 On top of that, the binding should distinguish:
 
-* `PiStartupError` — could not spawn `pi --mode rpc`
+* `PiStartupError` — could not spawn `pi --mode rpc`, or the cold-start readiness probe did not complete within `startup_timeout`
 * command failure — Pi returned `success: false`
 * stream failure — stdout stream died or became invalid during active work
 * cancellation — user issued `abort`, `abort_retry`, or `abort_bash`

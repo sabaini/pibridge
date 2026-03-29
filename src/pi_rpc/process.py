@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from .commands import RpcCommand, ensure_command_id, serialize_command
+from .commands import RpcCommand, ensure_command_id, make_command, serialize_command
 from .events import AgentEndEvent, AgentEvent, AgentStartEvent, parse_event
 from .exceptions import (
     PiProcessExitedError,
@@ -135,6 +135,7 @@ class PiProcess:
     def send_command(self, command: RpcCommand, timeout: float | None = None) -> RpcResponse[Any]:
         if timeout is None:
             timeout = self._options.command_timeout
+        self._ensure_ready_for_command()
         with self._lock:
             if self._closed:
                 raise PiProcessExitedError("Pi process client is closed")
@@ -153,14 +154,9 @@ class PiProcess:
                     self._pending_workflow_start_id = None
                 self._pending.cancel(command.id or "")
                 raise
-        if not pending.ready.wait(timeout):
-            self._pending.abandon(command.id or "")
-            raise PiTimeoutError(command.type, timeout, command.id)
-        if pending.error is not None:
-            raise pending.error
-        assert pending.response is not None
+        response = self._wait_for_pending_request(pending, timeout=timeout, timeout_error=PiTimeoutError(command.type, timeout, command.id))
         try:
-            pending.response.raise_for_error()
+            response.raise_for_error()
         except BaseException:
             if pending_workflow_start:
                 with self._lock:
@@ -170,11 +166,11 @@ class PiProcess:
             raise
         with self._lock:
             self._schedule_idle_timer_locked()
-        return pending.response
+        return response
 
-    def _ensure_started_locked(self) -> None:
+    def _ensure_started_locked(self) -> bool:
         if self._process is not None and self._process.poll() is None:
-            return
+            return False
         if self._stream_failure is not None:
             if self._restartable_idle_failure:
                 self._stream_failure = None
@@ -184,6 +180,52 @@ class PiProcess:
         if self._process is not None and self._process.poll() is not None:
             self._process = None
         self._start_process_locked()
+        return True
+
+    def _ensure_ready_for_command(self) -> None:
+        while True:
+            with self._lock:
+                if self._closed:
+                    raise PiProcessExitedError("Pi process client is closed")
+                self._cancel_idle_timer()
+                started = self._ensure_started_locked()
+                startup_pending = self._send_startup_probe_locked() if started else None
+            if startup_pending is None:
+                return
+            self._await_startup_probe(startup_pending)
+
+    def _send_startup_probe_locked(self) -> _PendingRequest:
+        command = ensure_command_id(make_command("get_state"))
+        pending = self._pending.add(command)
+        try:
+            self._write_command_locked(command)
+        except BaseException:
+            self._pending.cancel(command.id or "")
+            raise
+        return pending
+
+    def _await_startup_probe(self, pending: _PendingRequest) -> None:
+        timeout = self._options.startup_timeout
+        timeout_error = PiStartupError(f"Timed out waiting for Pi startup readiness after {timeout:.3f}s")
+        try:
+            response = self._wait_for_pending_request(pending, timeout=timeout, timeout_error=timeout_error)
+            response.raise_for_error()
+        except PiStartupError:
+            self._stop_process(graceful=False)
+            raise
+        except BaseException as exc:
+            self._stop_process(graceful=False)
+            raise PiStartupError(f"Pi failed during startup readiness probe: {exc}") from exc
+
+    def _wait_for_pending_request(self, pending: _PendingRequest, *, timeout: float, timeout_error: BaseException) -> RpcResponse[Any]:
+        command_id = pending.command.id or ""
+        if not pending.ready.wait(timeout):
+            self._pending.abandon(command_id)
+            raise timeout_error
+        if pending.error is not None:
+            raise pending.error
+        assert pending.response is not None
+        return pending.response
 
     def _build_argv(self) -> list[str]:
         argv = [self._options.executable, "--mode", "rpc"]
