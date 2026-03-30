@@ -361,9 +361,11 @@ def test_serialize_extension_ui_response_variants(kwargs: dict[str, object], exp
         (lambda: parse_extension_ui_request({"type": "extension_ui_request", "id": "req-3", "method": "notify", "message": "Heads up", "notifyType": "loud"}), "notifyType"),
         (lambda: parse_extension_ui_request({"type": "extension_ui_request", "id": "req-4", "method": "setWidget", "widgetKey": "demo", "widgetPlacement": "sidebar"}), "widgetPlacement"),
         (lambda: parse_extension_ui_request({"type": "extension_ui_request", "id": "req-5", "method": "mystery"}), "method"),
+        (lambda: parse_extension_ui_request({"type": "extension_ui_request", "id": "", "method": "confirm", "title": "Clear"}), "non-empty"),
         (lambda: serialize_extension_ui_response(request_id="req-6"), "exactly one"),
         (lambda: serialize_extension_ui_response(request_id="req-7", value="Allow", confirmed=True), "exactly one"),
         (lambda: serialize_extension_ui_response(request_id="req-8", cancelled=False), "cancelled"),
+        (lambda: serialize_extension_ui_response(request_id="", value="Allow"), "non-empty"),
     ],
 )
 def test_extension_ui_protocol_helpers_reject_malformed_payloads(call: object, match: str) -> None:

@@ -188,6 +188,8 @@ with PiClient() as client:
 
     while True:
         event = subscription.get(timeout=30)
+        if event.type == "agent_end":
+            break
         if not isinstance(event, ExtensionUiRequestEvent):
             continue
 

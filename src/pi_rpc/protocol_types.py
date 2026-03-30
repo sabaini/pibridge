@@ -919,6 +919,8 @@ def parse_extension_ui_request(payload: Any) -> ExtensionUiRequest:
     if payload.get("type") != "extension_ui_request":
         raise PiProtocolError("Expected extension UI request type 'extension_ui_request'")
     request_id = _require_str(payload, "id")
+    if request_id == "":
+        raise PiProtocolError("Expected 'id' to be a non-empty string")
     method = _require_literal_value(
         payload.get("method"),
         ("select", "confirm", "input", "editor", "notify", "setStatus", "setWidget", "setTitle", "set_editor_text"),
@@ -985,6 +987,8 @@ def serialize_extension_ui_response(
 ) -> dict[str, Any]:
     if not isinstance(request_id, str):
         raise PiProtocolError("Expected 'request_id' to be a string")
+    if request_id == "":
+        raise PiProtocolError("Expected 'request_id' to be a non-empty string")
     if value is not None and not isinstance(value, str):
         raise PiProtocolError("Expected 'value' to be a string when present")
     if confirmed is not None and not isinstance(confirmed, bool):
