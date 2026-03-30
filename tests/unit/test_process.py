@@ -11,11 +11,12 @@ from typing import Any
 import pytest
 
 from pi_rpc.commands import make_command
-from pi_rpc.events import AgentStartEvent
+from pi_rpc.events import AgentStartEvent, ExtensionUiRequestEvent
 from pi_rpc.exceptions import PiCommandError, PiProcessExitedError, PiStartupError, PiTimeoutError
 from pi_rpc.jsonl import JsonlReader, serialize_json_line
 from pi_rpc.models import PiClientOptions
 from pi_rpc.process import PiProcess
+from pi_rpc.protocol_types import ConfirmExtensionUiRequest, NotifyExtensionUiRequest
 
 
 class FakeReadable:
@@ -317,6 +318,59 @@ def test_process_fans_out_events_and_tracks_active_workflow() -> None:
     assert isinstance(first, AgentStartEvent)
     assert second.type == "agent_end"
     assert process.active_workflow is False
+
+
+def test_process_publishes_extension_ui_request_events_without_killing_stream() -> None:
+    children: list[FakeChildProcess] = []
+    process = make_process(children)
+    subscription = process.subscribe_events(maxsize=10)
+
+    start_process_for_test(process)
+    children[0].send_record({"type": "extension_ui_request", "id": "ui-1", "method": "notify", "message": "Heads up"})
+
+    event = subscription.get(timeout=0.2)
+    assert isinstance(event, ExtensionUiRequestEvent)
+    assert isinstance(event.request, NotifyExtensionUiRequest)
+    assert event.request.message == "Heads up"
+
+    children[0].on_command = lambda payload: children[0].send_record(state_response(payload["id"], "after-ui"))
+    response = process.send_command(make_command("get_state"))
+    assert response.data.session_id == "after-ui"
+
+
+def test_process_extension_ui_response_helpers_write_raw_jsonl_records() -> None:
+    children: list[FakeChildProcess] = []
+    process = make_process(children)
+
+    start_process_for_test(process)
+
+    process.respond_extension_ui_value("ui-1", "Allow")
+    process.respond_extension_ui_confirmed("ui-2")
+    process.respond_extension_ui_confirmed("ui-3", confirmed=False)
+    process.respond_extension_ui_cancelled("ui-4")
+
+    assert children[0].commands == [
+        {"type": "extension_ui_response", "id": "ui-1", "value": "Allow"},
+        {"type": "extension_ui_response", "id": "ui-2", "confirmed": True},
+        {"type": "extension_ui_response", "id": "ui-3", "confirmed": False},
+        {"type": "extension_ui_response", "id": "ui-4", "cancelled": True},
+    ]
+    assert process.active_workflow is False
+
+
+def test_process_publishes_dialog_extension_ui_requests() -> None:
+    children: list[FakeChildProcess] = []
+    process = make_process(children)
+    subscription = process.subscribe_events(maxsize=10)
+
+    start_process_for_test(process)
+    children[0].send_record({"type": "extension_ui_request", "id": "ui-confirm", "method": "confirm", "title": "Clear session?", "message": "All messages will be lost."})
+
+    event = subscription.get(timeout=0.2)
+    assert isinstance(event, ExtensionUiRequestEvent)
+    assert isinstance(event.request, ConfirmExtensionUiRequest)
+    assert event.request.title == "Clear session?"
+    assert event.request.message == "All messages will be lost."
 
 
 def test_process_times_out_and_cleans_pending_request() -> None:

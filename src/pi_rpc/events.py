@@ -8,9 +8,11 @@ from .models import CompactionResult
 from .protocol_types import (
     AgentMessage,
     AssistantMessageEvent,
+    ExtensionUiRequest,
     ToolExecutionResult,
     parse_agent_message,
     parse_assistant_message_event,
+    parse_extension_ui_request,
     parse_tool_execution_result,
 )
 
@@ -123,8 +125,29 @@ class ExtensionErrorEvent:
     type: str = "extension_error"
 
 
+@dataclass(frozen=True)
+class ExtensionUiRequestEvent:
+    request: ExtensionUiRequest
+    type: str = "extension_ui_request"
+
+
 AgentEvent = (
-    AgentStartEvent | AgentEndEvent | TurnStartEvent | TurnEndEvent | MessageStartEvent | MessageUpdateEvent | MessageEndEvent | ToolExecutionStartEvent | ToolExecutionUpdateEvent | ToolExecutionEndEvent | AutoCompactionStartEvent | AutoCompactionEndEvent | AutoRetryStartEvent | AutoRetryEndEvent | ExtensionErrorEvent
+    AgentStartEvent
+    | AgentEndEvent
+    | TurnStartEvent
+    | TurnEndEvent
+    | MessageStartEvent
+    | MessageUpdateEvent
+    | MessageEndEvent
+    | ToolExecutionStartEvent
+    | ToolExecutionUpdateEvent
+    | ToolExecutionEndEvent
+    | AutoCompactionStartEvent
+    | AutoCompactionEndEvent
+    | AutoRetryStartEvent
+    | AutoRetryEndEvent
+    | ExtensionErrorEvent
+    | ExtensionUiRequestEvent
 )
 
 
@@ -233,6 +256,8 @@ def parse_event(payload: Any) -> AgentEvent:
             event=_require_str(payload, "event"),
             error=_require_str(payload, "error"),
         )
+    if event_type == "extension_ui_request":
+        return ExtensionUiRequestEvent(request=parse_extension_ui_request(payload))
     raise PiProtocolError(f"Unsupported event type: {event_type!r}")
 
 

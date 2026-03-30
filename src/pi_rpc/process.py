@@ -10,15 +10,10 @@ from typing import Any
 
 from .commands import RpcCommand, ensure_command_id, make_command, serialize_command
 from .events import AgentEndEvent, AgentEvent, AgentStartEvent, parse_event
-from .exceptions import (
-    PiProcessExitedError,
-    PiProtocolError,
-    PiStartupError,
-    PiTimeoutError,
-    PiUnsupportedFeatureError,
-)
+from .exceptions import PiProcessExitedError, PiProtocolError, PiStartupError, PiTimeoutError
 from .jsonl import JsonlReader, serialize_json_line
 from .models import PiClientOptions
+from .protocol_types import serialize_extension_ui_response
 from .responses import RpcResponse, parse_response
 from .subscriptions import EventSubscription, SubscriptionHub
 
@@ -122,6 +117,15 @@ class PiProcess:
     def subscribe_events(self, maxsize: int = 1000) -> EventSubscription[AgentEvent]:
         return self._subscriptions.subscribe(maxsize=maxsize)
 
+    def respond_extension_ui_value(self, request_id: str, value: str) -> None:
+        self._send_extension_ui_response(serialize_extension_ui_response(request_id=request_id, value=value))
+
+    def respond_extension_ui_confirmed(self, request_id: str, confirmed: bool = True) -> None:
+        self._send_extension_ui_response(serialize_extension_ui_response(request_id=request_id, confirmed=confirmed))
+
+    def respond_extension_ui_cancelled(self, request_id: str) -> None:
+        self._send_extension_ui_response(serialize_extension_ui_response(request_id=request_id, cancelled=True))
+
     def close(self) -> None:
         with self._lock:
             if self._closed:
@@ -173,6 +177,14 @@ class PiProcess:
         with self._lock:
             self._schedule_idle_timer_locked()
         return response
+
+    def _send_extension_ui_response(self, payload: dict[str, Any]) -> None:
+        with self._lock:
+            if self._closed:
+                raise PiProcessExitedError("Pi process client is closed")
+            if self._process is None:
+                raise PiProcessExitedError("Pi process is not running")
+            self._write_record_locked(payload)
 
     def _ensure_started_locked(self) -> bool:
         if self._process is not None and self._process.poll() is None:
@@ -287,13 +299,12 @@ class PiProcess:
         self._stdout_thread.start()
         self._stderr_thread.start()
 
-    def _write_command_locked(self, command: RpcCommand) -> None:
+    def _write_record_locked(self, payload: dict[str, Any]) -> None:
         if self._process is None or self._process.stdin is None:
             raise PiProcessExitedError("Pi process stdin is unavailable")
         if self._process.poll() is not None:
             stderr = self._stderr_text()
             raise PiProcessExitedError("Pi process exited before command write", returncode=self._process.poll(), stderr=stderr)
-        payload = serialize_command(command)
         try:
             self._process.stdin.write(serialize_json_line(payload))
             self._process.stdin.flush()
@@ -301,6 +312,9 @@ class PiProcess:
             error = PiProcessExitedError("Failed to write command to Pi process", returncode=self._process.poll(), stderr=self._stderr_text())
             self._handle_stream_failure(error, generation=self._process_generation)
             raise error from exc
+
+    def _write_command_locked(self, command: RpcCommand) -> None:
+        self._write_record_locked(serialize_command(command))
 
     def _stdout_loop(self, generation: int) -> None:
         assert self._process is not None and self._process.stdout is not None
@@ -319,7 +333,7 @@ class PiProcess:
         except json.JSONDecodeError as exc:
             self._handle_stream_failure(PiProtocolError(f"Malformed JSON on stdout: {exc}"), generation=generation)
             return
-        except (PiProtocolError, PiUnsupportedFeatureError) as exc:
+        except PiProtocolError as exc:
             self._handle_stream_failure(exc, generation=generation)
             return
         except BaseException as exc:
@@ -364,8 +378,6 @@ class PiProcess:
             if fulfillment == "missing":
                 raise PiProtocolError(f"Received response for unknown request id: {response.request_id}")
             return
-        if record_type == "extension_ui_request":
-            raise PiUnsupportedFeatureError("extension_ui_request is not supported by pi-rpc-python v1")
         event = parse_event(payload)
         with self._lock:
             if generation != self._process_generation:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Literal, TypeVar, cast
+from dataclasses import dataclass
+from typing import Any, Literal, TypeAlias, TypeVar, cast
 
 from .exceptions import PiProtocolError
 
@@ -46,6 +46,7 @@ QueueMode = Literal["all", "one-at-a-time"]
 StreamingBehavior = Literal["steer", "followUp"]
 NotifyType = Literal["info", "warning", "error"]
 WidgetPlacement = Literal["aboveEditor", "belowEditor"]
+ExtensionUiMethod = Literal["select", "confirm", "input", "editor", "notify", "setStatus", "setWidget", "setTitle", "set_editor_text"]
 AssistantStopReason = Literal["stop", "length", "toolUse", "error", "aborted"]
 AssistantEventType = Literal[
     "start",
@@ -251,10 +252,91 @@ class ToolExecutionResult:
 
 
 @dataclass(frozen=True)
-class ExtensionUiRequest:
+class SelectExtensionUiRequest:
     id: str
-    method: str
-    payload: dict[str, Any] = field(default_factory=dict)
+    title: str
+    options: tuple[str, ...]
+    timeout: int | None = None
+    method: Literal["select"] = "select"
+
+
+@dataclass(frozen=True)
+class ConfirmExtensionUiRequest:
+    id: str
+    title: str
+    message: str | None = None
+    timeout: int | None = None
+    method: Literal["confirm"] = "confirm"
+
+
+@dataclass(frozen=True)
+class InputExtensionUiRequest:
+    id: str
+    title: str
+    placeholder: str | None = None
+    timeout: int | None = None
+    method: Literal["input"] = "input"
+
+
+@dataclass(frozen=True)
+class EditorExtensionUiRequest:
+    id: str
+    title: str
+    prefill: str | None = None
+    timeout: int | None = None
+    method: Literal["editor"] = "editor"
+
+
+@dataclass(frozen=True)
+class NotifyExtensionUiRequest:
+    id: str
+    message: str
+    notify_type: NotifyType = "info"
+    method: Literal["notify"] = "notify"
+
+
+@dataclass(frozen=True)
+class SetStatusExtensionUiRequest:
+    id: str
+    status_key: str
+    status_text: str | None = None
+    method: Literal["setStatus"] = "setStatus"
+
+
+@dataclass(frozen=True)
+class SetWidgetExtensionUiRequest:
+    id: str
+    widget_key: str
+    widget_lines: tuple[str, ...] | None = None
+    widget_placement: WidgetPlacement = "aboveEditor"
+    method: Literal["setWidget"] = "setWidget"
+
+
+@dataclass(frozen=True)
+class SetTitleExtensionUiRequest:
+    id: str
+    title: str
+    method: Literal["setTitle"] = "setTitle"
+
+
+@dataclass(frozen=True)
+class SetEditorTextExtensionUiRequest:
+    id: str
+    text: str
+    method: Literal["set_editor_text"] = "set_editor_text"
+
+
+ExtensionUiRequest: TypeAlias = (
+    SelectExtensionUiRequest
+    | ConfirmExtensionUiRequest
+    | InputExtensionUiRequest
+    | EditorExtensionUiRequest
+    | NotifyExtensionUiRequest
+    | SetStatusExtensionUiRequest
+    | SetWidgetExtensionUiRequest
+    | SetTitleExtensionUiRequest
+    | SetEditorTextExtensionUiRequest
+)
 
 
 _LiteralString = TypeVar("_LiteralString", bound=str)
@@ -318,6 +400,15 @@ def _optional_int(payload: dict[str, Any], key: str) -> int | None:
     if not isinstance(value, int) or isinstance(value, bool):
         raise PiProtocolError(f"Expected '{key}' to be an integer when present")
     return value
+
+
+def _optional_str_tuple(payload: dict[str, Any], key: str) -> tuple[str, ...] | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise PiProtocolError(f"Expected '{key}' to be a list of strings when present")
+    return tuple(value)
 
 
 def parse_thinking_level_value(value: Any, field_name: str) -> ThinkingLevel:
@@ -820,4 +911,97 @@ def serialize_tool_execution_result(result: ToolExecutionResult) -> dict[str, An
     payload: dict[str, Any] = {"content": [serialize_content_block(block) for block in result.content]}
     if result.details is not None:
         payload["details"] = result.details
+    return payload
+
+
+def parse_extension_ui_request(payload: Any) -> ExtensionUiRequest:
+    payload = _require_mapping(payload, "extension UI request")
+    if payload.get("type") != "extension_ui_request":
+        raise PiProtocolError("Expected extension UI request type 'extension_ui_request'")
+    request_id = _require_str(payload, "id")
+    method = _require_literal_value(
+        payload.get("method"),
+        ("select", "confirm", "input", "editor", "notify", "setStatus", "setWidget", "setTitle", "set_editor_text"),
+        "method",
+    )
+    if method == "select":
+        options = _optional_str_tuple(payload, "options")
+        if options is None:
+            raise PiProtocolError("Expected 'options' to be a list of strings")
+        return SelectExtensionUiRequest(id=request_id, title=_require_str(payload, "title"), options=options, timeout=_optional_int(payload, "timeout"))
+    if method == "confirm":
+        return ConfirmExtensionUiRequest(
+            id=request_id,
+            title=_require_str(payload, "title"),
+            message=_optional_str(payload, "message"),
+            timeout=_optional_int(payload, "timeout"),
+        )
+    if method == "input":
+        return InputExtensionUiRequest(
+            id=request_id,
+            title=_require_str(payload, "title"),
+            placeholder=_optional_str(payload, "placeholder"),
+            timeout=_optional_int(payload, "timeout"),
+        )
+    if method == "editor":
+        return EditorExtensionUiRequest(
+            id=request_id,
+            title=_require_str(payload, "title"),
+            prefill=_optional_str(payload, "prefill"),
+            timeout=_optional_int(payload, "timeout"),
+        )
+    if method == "notify":
+        notify_type_raw = payload.get("notifyType", "info")
+        if notify_type_raw is None:
+            notify_type_raw = "info"
+        return NotifyExtensionUiRequest(
+            id=request_id,
+            message=_require_str(payload, "message"),
+            notify_type=_require_literal_value(notify_type_raw, ("info", "warning", "error"), "notifyType"),
+        )
+    if method == "setStatus":
+        return SetStatusExtensionUiRequest(id=request_id, status_key=_require_str(payload, "statusKey"), status_text=_optional_str(payload, "statusText"))
+    if method == "setWidget":
+        widget_placement_raw = payload.get("widgetPlacement", "aboveEditor")
+        if widget_placement_raw is None:
+            widget_placement_raw = "aboveEditor"
+        return SetWidgetExtensionUiRequest(
+            id=request_id,
+            widget_key=_require_str(payload, "widgetKey"),
+            widget_lines=_optional_str_tuple(payload, "widgetLines"),
+            widget_placement=_require_literal_value(widget_placement_raw, ("aboveEditor", "belowEditor"), "widgetPlacement"),
+        )
+    if method == "setTitle":
+        return SetTitleExtensionUiRequest(id=request_id, title=_require_str(payload, "title"))
+    return SetEditorTextExtensionUiRequest(id=request_id, text=_require_str(payload, "text"))
+
+
+def serialize_extension_ui_response(
+    *,
+    request_id: str,
+    value: str | None = None,
+    confirmed: bool | None = None,
+    cancelled: bool = False,
+) -> dict[str, Any]:
+    if not isinstance(request_id, str):
+        raise PiProtocolError("Expected 'request_id' to be a string")
+    if value is not None and not isinstance(value, str):
+        raise PiProtocolError("Expected 'value' to be a string when present")
+    if confirmed is not None and not isinstance(confirmed, bool):
+        raise PiProtocolError("Expected 'confirmed' to be a boolean when present")
+    active_fields = int(value is not None) + int(confirmed is not None) + int(cancelled)
+    if active_fields != 1:
+        raise PiProtocolError("Expected exactly one of 'value', 'confirmed', or 'cancelled=True'")
+    if not cancelled and value is None and confirmed is None:
+        raise PiProtocolError("Expected a value, confirmed flag, or cancelled=True")
+    payload: dict[str, Any] = {"type": "extension_ui_response", "id": request_id}
+    if value is not None:
+        payload["value"] = value
+        return payload
+    if confirmed is not None:
+        payload["confirmed"] = confirmed
+        return payload
+    if not cancelled:
+        raise PiProtocolError("Expected 'cancelled' to be True when sending a cancellation response")
+    payload["cancelled"] = True
     return payload

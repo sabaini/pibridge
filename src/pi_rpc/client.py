@@ -49,6 +49,15 @@ class PiClient:
     def subscribe_events(self, maxsize: int = 1000) -> EventSubscription[AgentEvent]:
         return self._process.subscribe_events(maxsize=maxsize)
 
+    def respond_extension_ui_value(self, request_id: str, value: str) -> None:
+        self._process.respond_extension_ui_value(request_id, value)
+
+    def respond_extension_ui_confirmed(self, request_id: str, confirmed: bool = True) -> None:
+        self._process.respond_extension_ui_confirmed(request_id, confirmed=confirmed)
+
+    def respond_extension_ui_cancelled(self, request_id: str) -> None:
+        self._process.respond_extension_ui_cancelled(request_id)
+
     def send_command(self, request: RpcCommand | str, timeout: float | None = None, **fields: Any) -> RpcResponse[Any]:
         if isinstance(request, str):
             request = make_command(request, **fields)

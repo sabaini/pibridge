@@ -107,6 +107,7 @@ The public client mirrors the documented RPC surface:
 - `set_auto_retry()`, `abort_retry()`
 - `bash()`, `abort_bash()`
 - `export_html()`, `get_fork_messages()`, `get_last_assistant_text()`, `set_session_name()`, `get_commands()`
+- `respond_extension_ui_value()`, `respond_extension_ui_confirmed()`, `respond_extension_ui_cancelled()` for RPC-safe extension UI dialogs
 - low-level `send_command()` when you need direct protocol access
 
 Notable argument details from the current client:
@@ -160,11 +161,46 @@ client.prompt("Analyze the failure using the collected command output")
 
 The stored bash execution message does not emit its own event.
 
-## Unsupported/deferred v1 features
+## Extension UI support
 
-v1 intentionally does **not** implement extension UI request/response handling.
+`pi-rpc-python` supports the RPC-safe extension UI sub-protocol documented by Pi.
 
-If Pi emits an `extension_ui_request`, the client raises `PiUnsupportedFeatureError` rather than silently dropping it.
+Supported request methods published through `subscribe_events()` as `ExtensionUiRequestEvent` values:
+
+- dialog methods: `select`, `confirm`, `input`, `editor`
+- fire-and-forget methods: `notify`, `setStatus`, `setWidget`, `setTitle`, `set_editor_text`
+
+Dialog methods block Pi until the host responds with one of:
+
+- `respond_extension_ui_value(request_id, value)`
+- `respond_extension_ui_confirmed(request_id, confirmed=True | False)`
+- `respond_extension_ui_cancelled(request_id)`
+
+Example:
+
+```python
+from pi_rpc import PiClient
+from pi_rpc.events import ExtensionUiRequestEvent
+from pi_rpc.protocol_types import ConfirmExtensionUiRequest, SelectExtensionUiRequest
+
+with PiClient() as client:
+    subscription = client.subscribe_events(maxsize=200)
+
+    while True:
+        event = subscription.get(timeout=30)
+        if not isinstance(event, ExtensionUiRequestEvent):
+            continue
+
+        request = event.request
+        if isinstance(request, SelectExtensionUiRequest):
+            client.respond_extension_ui_value(request.id, request.options[0])
+        elif isinstance(request, ConfirmExtensionUiRequest):
+            client.respond_extension_ui_confirmed(request.id, confirmed=True)
+        else:
+            client.respond_extension_ui_cancelled(request.id)
+```
+
+Out of scope in v1: TUI-only extension APIs such as `ctx.ui.custom()` and other direct terminal component hooks that are not carried by the RPC protocol.
 
 ## Running tests
 
@@ -216,6 +252,7 @@ If `pi` is not installed or the bundled mock fixture is missing, the integration
 - `examples/basic_prompt.py`
 - `examples/session_flow.py`
 - `examples/bash_then_prompt.py`
+- `examples/extension_ui.py`
 - `examples/dataset_triage/` - Streamlit CSV/CSV.gz triage assistant with parse hints, bounded first-N profiling, prompt/transcript download, session HTML export, and Pi follow-ups via `continue_prompt()` (`just dataset-triage` bootstraps `.venv` and installs `.[examples]`)
 
 ## Compatibility and release workflow
@@ -229,6 +266,6 @@ If `pi` is not installed or the bundled mock fixture is missing, the integration
 
 - one active workflow per `PiClient`
 - synchronous/threaded API only in v1
-- no extension UI support in v1
+- extension UI support is limited to the RPC-safe methods documented by Pi; TUI-only APIs such as `ctx.ui.custom()` remain out of scope
 - compatibility is enforced by tests and documented support policy, not by a protocol handshake
 - some upstream commands still have behavior quirks; the public docs describe the runtime behavior exercised by the deterministic integration suite rather than assuming every documented RPC command streams identically

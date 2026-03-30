@@ -14,6 +14,7 @@ The repository currently treats the following as the supported compatibility con
   - the full typed command/response/event surface covered by unit tests
   - the mock-backed integration suite in `tests/integration/`
   - the recommended immediate streamed follow-up path exposed as `PiClient.continue_prompt()`
+  - the RPC-safe extension UI request/response flow exercised by `tests/integration/test_extension_ui.py`
 
 This policy is intentionally explicit: if the CI install path or verified upstream behavior changes, update this document, the workflows, and the affected tests together.
 
@@ -50,7 +51,7 @@ If upstream Pi changes those semantics, update the integration tests and documen
 
 The following are still out of scope for the supported contract:
 
-- extension UI request/response handling
+- TUI-only extension APIs such as `ctx.ui.custom()` and direct terminal component hooks that are not represented in RPC
 - async-native Python APIs
 - protocol behavior that is not exercised by the repository's tests
 

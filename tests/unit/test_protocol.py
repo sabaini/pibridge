@@ -3,21 +3,32 @@ from __future__ import annotations
 import pytest
 
 from pi_rpc.commands import RpcCommand, serialize_command
-from pi_rpc.events import AutoCompactionEndEvent, AutoCompactionStartEvent, MessageUpdateEvent, parse_event
+from pi_rpc.events import AutoCompactionEndEvent, AutoCompactionStartEvent, ExtensionUiRequestEvent, MessageUpdateEvent, parse_event
 from pi_rpc.exceptions import PiCommandError, PiProtocolError
 from pi_rpc.protocol_types import (
     AssistantMessage,
     BashExecutionMessage,
     BranchSummaryMessage,
     CompactionSummaryMessage,
+    ConfirmExtensionUiRequest,
     CustomMessage,
+    EditorExtensionUiRequest,
     ImageContent,
+    InputExtensionUiRequest,
+    NotifyExtensionUiRequest,
+    SelectExtensionUiRequest,
+    SetEditorTextExtensionUiRequest,
+    SetStatusExtensionUiRequest,
+    SetTitleExtensionUiRequest,
+    SetWidgetExtensionUiRequest,
     ToolCall,
     parse_agent_message,
     parse_assistant_message_event,
+    parse_extension_ui_request,
     parse_rpc_slash_command,
     parse_session_state,
     serialize_agent_message,
+    serialize_extension_ui_response,
 )
 from pi_rpc.responses import parse_response
 
@@ -255,3 +266,107 @@ def test_protocol_parsers_reject_unknown_enum_values(payload: dict[str, object],
             parse_session_state(payload)
         else:
             parse_agent_message(payload)
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_type", "expected_fields"),
+    [
+        (
+            {"type": "extension_ui_request", "id": "req-select", "method": "select", "title": "Choose", "options": ["Allow", "Block"], "timeout": 1000},
+            SelectExtensionUiRequest,
+            {"id": "req-select", "title": "Choose", "options": ("Allow", "Block"), "timeout": 1000},
+        ),
+        (
+            {"type": "extension_ui_request", "id": "req-confirm", "method": "confirm", "title": "Clear session?", "message": "All messages will be lost.", "timeout": 5000},
+            ConfirmExtensionUiRequest,
+            {"id": "req-confirm", "title": "Clear session?", "message": "All messages will be lost.", "timeout": 5000},
+        ),
+        (
+            {"type": "extension_ui_request", "id": "req-input", "method": "input", "title": "Enter", "placeholder": "type..."},
+            InputExtensionUiRequest,
+            {"id": "req-input", "title": "Enter", "placeholder": "type...", "timeout": None},
+        ),
+        (
+            {"type": "extension_ui_request", "id": "req-editor", "method": "editor", "title": "Edit", "prefill": "Line 1"},
+            EditorExtensionUiRequest,
+            {"id": "req-editor", "title": "Edit", "prefill": "Line 1", "timeout": None},
+        ),
+        (
+            {"type": "extension_ui_request", "id": "req-notify", "method": "notify", "message": "Heads up"},
+            NotifyExtensionUiRequest,
+            {"id": "req-notify", "message": "Heads up", "notify_type": "info"},
+        ),
+        (
+            {"type": "extension_ui_request", "id": "req-status", "method": "setStatus", "statusKey": "demo", "statusText": "running"},
+            SetStatusExtensionUiRequest,
+            {"id": "req-status", "status_key": "demo", "status_text": "running"},
+        ),
+        (
+            {"type": "extension_ui_request", "id": "req-widget", "method": "setWidget", "widgetKey": "demo", "widgetLines": ["one", "two"]},
+            SetWidgetExtensionUiRequest,
+            {"id": "req-widget", "widget_key": "demo", "widget_lines": ("one", "two"), "widget_placement": "aboveEditor"},
+        ),
+        (
+            {"type": "extension_ui_request", "id": "req-title", "method": "setTitle", "title": "pi demo"},
+            SetTitleExtensionUiRequest,
+            {"id": "req-title", "title": "pi demo"},
+        ),
+        (
+            {"type": "extension_ui_request", "id": "req-editor-text", "method": "set_editor_text", "text": "prefilled text"},
+            SetEditorTextExtensionUiRequest,
+            {"id": "req-editor-text", "text": "prefilled text"},
+        ),
+    ],
+)
+def test_parse_extension_ui_request_variants(payload: dict[str, object], expected_type: type[object], expected_fields: dict[str, object]) -> None:
+    parsed = parse_extension_ui_request(payload)
+    assert isinstance(parsed, expected_type)
+    for key, value in expected_fields.items():
+        assert getattr(parsed, key) == value
+
+
+def test_parse_event_supports_extension_ui_requests() -> None:
+    event = parse_event({"type": "extension_ui_request", "id": "req-1", "method": "confirm", "title": "Clear session?"})
+    assert isinstance(event, ExtensionUiRequestEvent)
+    assert event.request.id == "req-1"
+    assert event.request.method == "confirm"
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        (
+            {"request_id": "req-1", "value": "Allow"},
+            {"type": "extension_ui_response", "id": "req-1", "value": "Allow"},
+        ),
+        (
+            {"request_id": "req-2", "confirmed": True},
+            {"type": "extension_ui_response", "id": "req-2", "confirmed": True},
+        ),
+        (
+            {"request_id": "req-3", "cancelled": True},
+            {"type": "extension_ui_response", "id": "req-3", "cancelled": True},
+        ),
+    ],
+)
+def test_serialize_extension_ui_response_variants(kwargs: dict[str, object], expected: dict[str, object]) -> None:
+    assert serialize_extension_ui_response(**kwargs) == expected
+
+
+@pytest.mark.parametrize(
+    ("call", "match"),
+    [
+        (lambda: parse_extension_ui_request({"type": "extension_ui_request", "id": "req-1", "method": "select", "title": "Choose", "options": ["Allow", 1]}), "options"),
+        (lambda: parse_extension_ui_request({"type": "extension_ui_request", "id": "req-2", "method": "confirm", "title": "Clear", "timeout": True}), "timeout"),
+        (lambda: parse_extension_ui_request({"type": "extension_ui_request", "id": "req-3", "method": "notify", "message": "Heads up", "notifyType": "loud"}), "notifyType"),
+        (lambda: parse_extension_ui_request({"type": "extension_ui_request", "id": "req-4", "method": "setWidget", "widgetKey": "demo", "widgetPlacement": "sidebar"}), "widgetPlacement"),
+        (lambda: parse_extension_ui_request({"type": "extension_ui_request", "id": "req-5", "method": "mystery"}), "method"),
+        (lambda: serialize_extension_ui_response(request_id="req-6"), "exactly one"),
+        (lambda: serialize_extension_ui_response(request_id="req-7", value="Allow", confirmed=True), "exactly one"),
+        (lambda: serialize_extension_ui_response(request_id="req-8", cancelled=False), "cancelled"),
+    ],
+)
+def test_extension_ui_protocol_helpers_reject_malformed_payloads(call: object, match: str) -> None:
+    with pytest.raises(PiProtocolError, match=match):
+        assert callable(call)
+        call()

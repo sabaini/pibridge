@@ -30,7 +30,7 @@ This package will not:
 
 * define a new protocol
 * add generic host capability callbacks in v1
-* implement extension UI support in v1
+* emulate Pi's TUI or support TUI-only extension APIs such as `ctx.ui.custom()` in v1
 * invent request-scoped event streams where the protocol provides only a global event stream
 * hide protocol-specific semantics such as `bash` behavior
 * replace Pi’s CLI or extension system
@@ -56,12 +56,17 @@ v1 is a **full protocol wrapper**.
 
 That means the package should wrap the documented command surface, including prompting, state/session commands, model selection, thinking level, queue modes, compaction, retry controls, bash, export/session operations, and command discovery. The Pi RPC doc documents all of those as first-class commands. ([GitHub][1])
 
-v1 does **not** include:
+v1 includes the RPC-safe extension UI request/response sub-protocol from upstream `rpc.md`.
 
-* extension UI support
+That means the package publishes typed `extension_ui_request` records through subscriptions and provides explicit helpers for sending matching `extension_ui_response` payloads. Supported UI methods are limited to the RPC-safe methods documented upstream:
+
+* dialog methods: `select`, `confirm`, `input`, `editor`
+* fire-and-forget methods: `notify`, `setStatus`, `setWidget`, `setTitle`, `set_editor_text`
+
+Still deferred:
+
 * arbitrary host-side capability callbacks
-
-Those are deferred.
+* TUI-only extension APIs such as `ctx.ui.custom()` and direct component hooks that do not cross the RPC boundary
 
 ## 6. Process model
 
@@ -152,7 +157,10 @@ Examples of first-class methods:
 * `get_fork_messages()`
 * `get_last_assistant_text()`
 * `set_session_name(...)`
-* `get_commands()` ([GitHub][1])
+* `get_commands()`
+* `respond_extension_ui_value(...)`
+* `respond_extension_ui_confirmed(...)`
+* `respond_extension_ui_cancelled(...)` ([GitHub][1])
 
 A generic low-level `send_command()` may exist, but the primary API should mirror protocol commands directly.
 
@@ -185,9 +193,7 @@ It parses each JSON line and classifies it into:
 
 Responses are matched by command `id`.
 
-Events are routed separately and are not request-scoped.
-
-This matches the protocol’s command/response/event model, where commands may carry `id` but events do not. ([GitHub][1])
+Normal agent events are routed separately and are not request-scoped. In addition, `extension_ui_request` records are surfaced to subscribers as typed `ExtensionUiRequestEvent` values. Matching `extension_ui_response` records are written directly to stdin and intentionally bypass normal RPC command/response bookkeeping because they are part of a side protocol, not first-class RPC commands. ([GitHub][1])
 
 ## 12. Stream consumption model
 
@@ -201,7 +207,7 @@ Design:
 * queued items are typed event objects, not raw dicts
 * overflow policy is explicit
 
-The protocol defines a global ordered event stream including `agent_start`, `agent_end`, `turn_start`, `turn_end`, `message_start`, `message_update`, `message_end`, `tool_execution_*`, `auto_compaction_*`, `auto_retry_*`, and `extension_error`. `message_update` includes structured deltas such as `text_delta`, `thinking_delta`, and toolcall deltas. ([GitHub][1])
+The protocol defines a global ordered event stream including `agent_start`, `agent_end`, `turn_start`, `turn_end`, `message_start`, `message_update`, `message_end`, `tool_execution_*`, `auto_compaction_*`, `auto_retry_*`, and `extension_error`. `message_update` includes structured deltas such as `text_delta`, `thinking_delta`, and toolcall deltas. The wrapper also publishes typed `ExtensionUiRequestEvent` values for the RPC extension UI side protocol so hosts can answer dialogs and observe fire-and-forget UI updates from the same subscription interface. ([GitHub][1])
 
 ### Subscription API
 
@@ -249,13 +255,23 @@ client.bash("journalctl -u ceph-mon")
 client.prompt("Analyze the failure based on the collected evidence")
 ```
 
-## 14. Deferred areas
+## 14. Extension UI support and remaining deferrals
 
 ### Extension UI
 
-Deferred from v1.
+Supported in v1 for the RPC-safe sub-protocol.
 
-The protocol does define an extension UI request/response sub-protocol, but this binding will not implement it initially. ([GitHub][1])
+Host behavior is intentionally explicit:
+
+* subscribe first, then wait for `ExtensionUiRequestEvent`
+* reply to dialog methods with `respond_extension_ui_value(...)`, `respond_extension_ui_confirmed(...)`, or `respond_extension_ui_cancelled(...)`
+* fire-and-forget methods may be rendered by the host or ignored safely
+* the client does not emulate Pi's TUI; it only forwards typed requests and writes typed responses ([GitHub][1])
+
+Out of scope even with extension UI support:
+
+* `ctx.ui.custom()`
+* direct TUI component hooks and other methods that require in-process terminal rendering
 
 ### Host capability callbacks
 

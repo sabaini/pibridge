@@ -16,6 +16,7 @@ class FakeProcess:
 
     def __post_init__(self) -> None:
         self.calls: list[tuple[RpcCommand | str, float | None]] = []
+        self.ui_calls: list[tuple[str, tuple[Any, ...]]] = []
         self.closed = False
 
     def send_command(self, command: RpcCommand | str, timeout: float | None = None) -> RpcResponse[Any]:
@@ -24,6 +25,15 @@ class FakeProcess:
 
     def subscribe_events(self, maxsize: int = 1000) -> object:
         return {"maxsize": maxsize}
+
+    def respond_extension_ui_value(self, request_id: str, value: str) -> None:
+        self.ui_calls.append(("value", (request_id, value)))
+
+    def respond_extension_ui_confirmed(self, request_id: str, confirmed: bool = True) -> None:
+        self.ui_calls.append(("confirmed", (request_id, confirmed)))
+
+    def respond_extension_ui_cancelled(self, request_id: str) -> None:
+        self.ui_calls.append(("cancelled", (request_id,)))
 
     def close(self) -> None:
         self.closed = True
@@ -116,6 +126,24 @@ def test_client_continue_prompt_serializes_follow_up_stream_and_optional_images(
         "streamingBehavior": "followUp",
     }
     assert timeout == 4.0
+
+
+def test_client_extension_ui_helpers_delegate_to_process() -> None:
+    client = PiClient()
+    fake = FakeProcess(RpcResponse(command="get_state", success=True, data=None))
+    client._process = fake  # type: ignore[assignment]
+
+    client.respond_extension_ui_value("ui-1", "Allow")
+    client.respond_extension_ui_confirmed("ui-2")
+    client.respond_extension_ui_confirmed("ui-3", confirmed=False)
+    client.respond_extension_ui_cancelled("ui-4")
+
+    assert fake.ui_calls == [
+        ("value", ("ui-1", "Allow")),
+        ("confirmed", ("ui-2", True)),
+        ("confirmed", ("ui-3", False)),
+        ("cancelled", ("ui-4",)),
+    ]
 
 
 def test_client_context_manager_closes_process() -> None:

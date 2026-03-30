@@ -20,6 +20,7 @@ MOCK_API_KEY_ENV = "PI_RPC_MOCK_API_KEY"
 MOCK_PROMPT_MAP_ENV = "PI_RPC_MOCK_PROMPT_MAP"
 MOCK_CONTEXT_MAP_ENV = "PI_RPC_MOCK_CONTEXT_MAP"
 MOCK_EXTENSION_PATH = Path(__file__).resolve().parent / "fixtures" / "mock_provider.ts"
+RPC_UI_DEMO_EXTENSION_PATH = Path(__file__).resolve().parent / "fixtures" / "rpc_ui_demo.ts"
 DEFAULT_MOCK_PROMPT_MAP = {
     "Reply with exactly: OK": "OK",
     "Respond with the word BRIDGE.": "BRIDGE",
@@ -43,6 +44,8 @@ def _integration_ready() -> tuple[bool, str]:
         return False, "pi executable not found on PATH"
     if not MOCK_EXTENSION_PATH.exists():
         return False, f"mock extension fixture not found: {MOCK_EXTENSION_PATH}"
+    if not RPC_UI_DEMO_EXTENSION_PATH.exists():
+        return False, f"RPC UI demo extension fixture not found: {RPC_UI_DEMO_EXTENSION_PATH}"
     return True, ""
 
 
@@ -218,6 +221,33 @@ def mock_pi_client(
         workspace=isolated_pi_workspace,
         command_timeout=command_timeout,
         extra_args=("-e", str(MOCK_EXTENSION_PATH)),
+        env=_mock_env(mock_prompt_map, mock_context_map),
+    )
+    with client:
+        available_models = client.get_available_models()
+        assert any(model.provider == MOCK_PROVIDER_NAME and model.id == MOCK_MODEL_ID for model in available_models)
+        selected_model = client.set_model(MOCK_PROVIDER_NAME, MOCK_MODEL_ID)
+        assert selected_model.provider == MOCK_PROVIDER_NAME
+        assert selected_model.id == MOCK_MODEL_ID
+        state = client.get_state()
+        assert state.model is not None
+        assert state.model.provider == MOCK_PROVIDER_NAME
+        assert state.model.id == MOCK_MODEL_ID
+        yield client
+
+
+@pytest.fixture
+def mock_extension_ui_client(
+    integration_ready: None,
+    isolated_pi_workspace: Path,
+    command_timeout: float,
+    mock_prompt_map: dict[str, str],
+    mock_context_map: dict[str, str],
+) -> Iterator[PiClient]:
+    client = _make_client(
+        workspace=isolated_pi_workspace,
+        command_timeout=command_timeout,
+        extra_args=("-e", str(MOCK_EXTENSION_PATH), "-e", str(RPC_UI_DEMO_EXTENSION_PATH)),
         env=_mock_env(mock_prompt_map, mock_context_map),
     )
     with client:
