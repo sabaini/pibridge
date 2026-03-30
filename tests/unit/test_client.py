@@ -6,7 +6,7 @@ from typing import Any
 from pi_rpc.client import PiClient
 from pi_rpc.commands import RpcCommand
 from pi_rpc.models import BashResult, LastAssistantTextResult, SessionTransitionResult
-from pi_rpc.protocol_types import ModelInfo, UsageCost
+from pi_rpc.protocol_types import ImageContent, ModelInfo, UsageCost
 from pi_rpc.responses import RpcResponse
 
 
@@ -97,6 +97,25 @@ def test_client_get_last_assistant_text_returns_text() -> None:
     client._process = fake  # type: ignore[assignment]
 
     assert client.get_last_assistant_text() == "hello"
+
+
+def test_client_continue_prompt_serializes_follow_up_stream_and_optional_images() -> None:
+    client = PiClient()
+    fake = FakeProcess(RpcResponse(command="prompt", success=True, data=None))
+    client._process = fake  # type: ignore[assignment]
+    images = [ImageContent(type="image", data="base64-image", mime_type="image/png")]
+
+    client.continue_prompt("Keep going", images=images, timeout=4.0)
+
+    command, timeout = fake.calls[-1]
+    assert isinstance(command, RpcCommand)
+    assert command.type == "prompt"
+    assert command.fields == {
+        "message": "Keep going",
+        "images": images,
+        "streamingBehavior": "followUp",
+    }
+    assert timeout == 4.0
 
 
 def test_client_context_manager_closes_process() -> None:

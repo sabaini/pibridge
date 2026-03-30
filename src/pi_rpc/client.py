@@ -69,6 +69,9 @@ class PiClient:
             fields["streamingBehavior"] = streaming_behavior
         unwrap_response(self.send_command("prompt", timeout=timeout, **fields))
 
+    def continue_prompt(self, message: str, *, images: list[ImageContent] | None = None, timeout: float | None = None) -> None:
+        self.prompt(message, images=images, streaming_behavior="followUp", timeout=timeout)
+
     def steer(self, message: str, *, images: list[ImageContent] | None = None, timeout: float | None = None) -> None:
         fields: dict[str, Any] = {"message": message}
         if images is not None:

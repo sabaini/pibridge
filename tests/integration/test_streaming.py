@@ -56,6 +56,18 @@ def test_prompt_follow_up_streaming_behavior_reuses_context(mock_pi_client: PiCl
     assert mock_pi_client.get_last_assistant_text() == "FOLLOW-UP"
 
 
+def test_continue_prompt_reuses_context_and_streams_immediately(mock_pi_client: PiClient) -> None:
+    subscription = mock_pi_client.subscribe_events(maxsize=300)
+
+    mock_pi_client.prompt("Respond with the word BRIDGE.")
+    _wait_for_agent_end(subscription)
+
+    mock_pi_client.continue_prompt("Use the verified follow-up path.")
+    _wait_for_agent_end(subscription)
+
+    assert mock_pi_client.get_last_assistant_text() == "FOLLOW-UP"
+
+
 def test_steer_queues_a_pending_message_during_active_stream(mock_pi_client: PiClient) -> None:
     subscription = mock_pi_client.subscribe_events(maxsize=300)
 

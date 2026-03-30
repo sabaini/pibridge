@@ -27,8 +27,15 @@ DEFAULT_MOCK_PROMPT_MAP = {
 }
 
 
+_REQUIRED_ENV_VALUES = {"1", "true", "yes", "on"}
+
+
 def _live_override_enabled() -> bool:
     return bool(os.environ.get("PI_RPC_PROVIDER") and os.environ.get("PI_RPC_MODEL"))
+
+
+def _integration_required() -> bool:
+    return os.environ.get("PI_RPC_REQUIRE_INTEGRATION", "").strip().lower() in _REQUIRED_ENV_VALUES
 
 
 def _integration_ready() -> tuple[bool, str]:
@@ -39,11 +46,22 @@ def _integration_ready() -> tuple[bool, str]:
     return True, ""
 
 
+def _integration_availability_outcome(*, ready: bool, reason: str, required: bool) -> tuple[str, str]:
+    if ready:
+        return "ready", ""
+    if required:
+        return "fail", f"Integration tests are required but unavailable: {reason}"
+    return "skip", reason
+
+
 @pytest.fixture(scope="session")
 def integration_ready() -> None:
     ready, reason = _integration_ready()
-    if not ready:
-        pytest.skip(reason)
+    outcome, message = _integration_availability_outcome(ready=ready, reason=reason, required=_integration_required())
+    if outcome == "fail":
+        pytest.fail(message)
+    if outcome == "skip":
+        pytest.skip(message)
 
 
 @pytest.fixture(scope="session")
@@ -166,6 +184,24 @@ def pi_client(
             extra_args=("-e", str(MOCK_EXTENSION_PATH)),
             env=_mock_env(mock_prompt_map, mock_context_map),
         )
+    with client:
+        yield client
+
+
+@pytest.fixture
+def live_pi_client(
+    integration_ready: None,
+    isolated_pi_workspace: Path,
+    command_timeout: float,
+) -> Iterator[PiClient]:
+    if not _live_override_enabled():
+        pytest.skip("live backend requires PI_RPC_PROVIDER and PI_RPC_MODEL")
+    client = _make_client(
+        workspace=isolated_pi_workspace,
+        command_timeout=command_timeout,
+        provider=os.environ["PI_RPC_PROVIDER"],
+        model=os.environ["PI_RPC_MODEL"],
+    )
     with client:
         yield client
 

@@ -83,9 +83,9 @@ Important lifecycle rules:
 - constructing `PiClient()` does not start Pi
 - the first command starts `pi --mode rpc`
 - `startup_timeout` bounds the lazy cold-start readiness probe; on a cold process the client first waits for an internal `get_state` response before sending your real command
+- after a cold start is ready, the user command still gets its normal `command_timeout` budget
 - `PiClientOptions.env` overlays the current process environment instead of replacing it wholesale
 - `PiClientOptions.extra_args` is appended to the spawned `pi --mode rpc` argv
-- after a cold start is ready, the user command still gets its normal `command_timeout` budget
 - `close()` or context-manager exit shuts the subprocess down
 - if `idle_timeout` is set and expires, the idle subprocess is stopped; the next command starts a fresh subprocess
 - if Pi exits while idle, the next command starts a fresh subprocess
@@ -97,6 +97,7 @@ Important lifecycle rules:
 The public client mirrors the documented RPC surface:
 
 - `prompt()`, `steer()`, `follow_up()`, `abort()`
+- additive convenience helper: `continue_prompt()` for the recommended immediate streamed follow-up path
 - `new_session()`, `switch_session()`, `fork()`
 - `get_state()`, `get_messages()`, `get_session_stats()`
 - `set_model()`, `cycle_model()`, `get_available_models()`
@@ -110,15 +111,16 @@ The public client mirrors the documented RPC surface:
 
 Notable argument details from the current client:
 
-- `prompt()`, `steer()`, and `follow_up()` accept optional image content blocks (see `pi_rpc.protocol_types.ImageContent`)
+- `prompt()`, `steer()`, `follow_up()`, and `continue_prompt()` accept optional image content blocks (see `pi_rpc.protocol_types.ImageContent`)
 - `prompt()` also accepts `streaming_behavior="steer" | "followUp"`
-- in the current verified compatibility suite, `prompt(..., streaming_behavior="followUp")` is the reliable way to stream a follow-up turn immediately; raw `follow_up()` and `steer()` currently queue pending work in session state instead of starting a fresh streamed turn on their own
+- `continue_prompt()` is the recommended immediate streamed follow-up helper; it sends `prompt(..., streaming_behavior="followUp")` while keeping the protocol-faithful low-level `follow_up()` and `steer()` methods available unchanged
+- in the current verified compatibility suite, raw `follow_up()` and `steer()` currently queue pending work in session state instead of starting a fresh streamed turn on their own
 - every high-level command accepts an optional per-call `timeout=` override
 - `send_command()` accepts either an explicit `pi_rpc.commands.RpcCommand` or a raw command name plus fields
 
 ### Event subscriptions
 
-Pi RPC exposes one global process event stream. Because events are not request-scoped, a single `PiClient` supports only one active agent workflow at a time.
+Pi RPC exposes one global process event stream. Because events are not request-scoped, a single `PiClient` supports only one active agent workflow at a time. If multiple threads or callers need stricter startup/command serialization, coordinate that outside the client.
 
 `subscribe_events()` returns an `EventSubscription`: a bounded, queue-like object with `get()`, `drain()`, and `close()`.
 
@@ -196,6 +198,8 @@ Run them with:
 pytest -m integration
 ```
 
+Set `PI_RPC_REQUIRE_INTEGRATION=1` when skips are unacceptable, such as CI jobs that are expected to install `pi` first. In that mode, the suite fails loudly instead of silently skipping when `pi` or the bundled mock fixture is unavailable.
+
 Optional live-backend override:
 
 - `PI_RPC_PROVIDER=<provider>`
@@ -212,12 +216,19 @@ If `pi` is not installed or the bundled mock fixture is missing, the integration
 - `examples/basic_prompt.py`
 - `examples/session_flow.py`
 - `examples/bash_then_prompt.py`
-- `examples/dataset_triage/` - Streamlit CSV/CSV.gz triage assistant with deterministic pandas profiling, sensitive-value redaction, and Pi follow-ups via `prompt(..., streaming_behavior="followUp")` (`just dataset-triage` bootstraps `.venv` and installs `.[examples]`)
+- `examples/dataset_triage/` - Streamlit CSV/CSV.gz triage assistant with parse hints, bounded first-N profiling, prompt/transcript download, session HTML export, and Pi follow-ups via `continue_prompt()` (`just dataset-triage` bootstraps `.venv` and installs `.[examples]`)
+
+## Compatibility and release workflow
+
+- compatibility policy: [`docs/compatibility-policy.md`](docs/compatibility-policy.md)
+- release checklist: [`docs/release-checklist.md`](docs/release-checklist.md)
+- GitHub Actions: `.github/workflows/ci.yml` runs lint, type checking, unit tests, build validation, and the mock-backed integration suite; `.github/workflows/compat-smoke.yml` is an opt-in live smoke workflow that runs `tests/integration/test_live_smoke.py` against one real provider/model pair
+- current CI installs `pi` on Ubuntu runners with `npm install -g @mariozechner/pi-coding-agent`; if that upstream install path changes, update both the workflow and `docs/compatibility-policy.md`
 
 ## Current limits
 
 - one active workflow per `PiClient`
 - synchronous/threaded API only in v1
 - no extension UI support in v1
-- compatibility is enforced by tests, not by a protocol handshake
+- compatibility is enforced by tests and documented support policy, not by a protocol handshake
 - some upstream commands still have behavior quirks; the public docs describe the runtime behavior exercised by the deterministic integration suite rather than assuming every documented RPC command streams identically

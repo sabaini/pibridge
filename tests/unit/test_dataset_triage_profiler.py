@@ -9,7 +9,7 @@ pd = pytest.importorskip("pandas")
 profiler = load_dataset_triage_module("profiler")
 
 
-def test_build_dataset_profile_surfaces_expected_suspicious_and_sensitive_columns() -> None:
+def test_build_dataset_profile_surfaces_expected_suspicious_columns() -> None:
     frame = pd.DataFrame(
         [
             {"customer_id": "C001", "email": "alice@example.com", "country": "US", "status": "active", "score": 10, "signup_date": "2024-01-01", "order_ref": "ORD-1001"},
@@ -28,41 +28,25 @@ def test_build_dataset_profile_surfaces_expected_suspicious_and_sensitive_column
     assert profile.duplicate_rows == 1
     assert {column.name for column in profile.columns_profile} == set(frame.columns)
     assert {column.name for column in profile.suspicious_columns} >= {"customer_id", "email", "country", "status", "score", "signup_date", "order_ref"}
-    assert {column.name for column in profile.sensitive_columns} == {"customer_id", "email", "order_ref"}
 
     columns_by_name = {column.name: column for column in profile.columns_profile}
-    customer_id = columns_by_name["customer_id"]
     email = columns_by_name["email"]
     signup_date = columns_by_name["signup_date"]
-    order_ref = columns_by_name["order_ref"]
+    customer_id = columns_by_name["customer_id"]
 
-    assert customer_id.identifier_like is True
-    assert customer_id.sensitive is True
-    assert customer_id.share_raw_values is False
-    assert "identifier-like values" in customer_id.sensitivity_reasons
-    assert any("likely identifier" in note for note in customer_id.notes)
-    assert any("raw values withheld" in note for note in customer_id.notes)
-
-    assert email.identifier_like is False
-    assert email.sensitive is True
-    assert "email/contact-like values" in email.sensitivity_reasons
     assert any("high missingness" in note for note in email.notes)
-
-    assert signup_date.identifier_like is False
-    assert signup_date.sensitive is False
-    assert any("looks like datetime text" in note for note in signup_date.notes)
-
-    assert order_ref.identifier_like is True
-    assert order_ref.sensitive is True
+    assert any("datetime text" in note for note in signup_date.notes)
+    assert any("identifier-like" in note for note in customer_id.notes)
+    assert any("normalization" in note for note in columns_by_name["country"].notes)
 
     numeric_summary = profile.numeric_summary["score"]
     assert numeric_summary["max"] == 9999.0
     assert numeric_summary["median"] == 10.5
     assert profile.categorical_top_values["country"][0] == ("US", 2)
-    assert profile.details["sensitive_columns_redacted_by_default"] == ["customer_id", "email", "order_ref"]
+    assert profile.details == {"duplicate_rows_present": True}
 
 
-def test_identifier_heuristics_avoid_small_datasets_and_safe_unique_columns() -> None:
+def test_build_dataset_profile_handles_small_unique_columns_without_special_redaction() -> None:
     small_frame = pd.DataFrame(
         [
             {"value": 10, "report_date": "2024-01-01", "city": "Paris"},
@@ -75,31 +59,46 @@ def test_identifier_heuristics_avoid_small_datasets_and_safe_unique_columns() ->
     profile = profiler.build_dataset_profile(small_frame)
     columns_by_name = {column.name: column for column in profile.columns_profile}
 
-    assert columns_by_name["value"].identifier_like is False
-    assert columns_by_name["value"].sensitive is False
-    assert columns_by_name["report_date"].identifier_like is False
-    assert columns_by_name["report_date"].sensitive is False
+    assert columns_by_name["value"].notes == ()
     assert any("looks like datetime text" in note for note in columns_by_name["report_date"].notes)
-    assert columns_by_name["city"].identifier_like is False
+    assert columns_by_name["city"].notes == ()
 
 
-def test_numeric_identifier_columns_need_name_signal_but_string_codes_can_still_be_detected() -> None:
+def test_identifier_like_constant_and_datetime_normalization_notes_are_deterministic() -> None:
     frame = pd.DataFrame(
         [
-            {"order_id": 10001, "quantity": 1, "reference_code": "RF-10001"},
-            {"order_id": 10002, "quantity": 2, "reference_code": "RF-10002"},
-            {"order_id": 10003, "quantity": 3, "reference_code": "RF-10003"},
-            {"order_id": 10004, "quantity": 4, "reference_code": "RF-10004"},
-            {"order_id": 10005, "quantity": 5, "reference_code": "RF-10005"},
+            {"order_id": 10001, "quantity": 1, "reference_code": "RF-10001", "status": "active", "event_time": "2024-01-01"},
+            {"order_id": 10002, "quantity": 2, "reference_code": "RF-10002", "status": "active", "event_time": "2024/01/02"},
+            {"order_id": 10003, "quantity": 3, "reference_code": "RF-10003", "status": "active", "event_time": "01-03-2024"},
+            {"order_id": 10004, "quantity": 4, "reference_code": "RF-10004", "status": "active", "event_time": "2024.01.04"},
+            {"order_id": 10005, "quantity": 5, "reference_code": "RF-10005", "status": "active", "event_time": "2024-01-05"},
         ]
     )
 
     profile = profiler.build_dataset_profile(frame)
     columns_by_name = {column.name: column for column in profile.columns_profile}
 
-    assert columns_by_name["order_id"].identifier_like is True
-    assert columns_by_name["order_id"].sensitive is True
-    assert columns_by_name["reference_code"].identifier_like is True
-    assert columns_by_name["reference_code"].sensitive is True
-    assert columns_by_name["quantity"].identifier_like is False
-    assert columns_by_name["quantity"].sensitive is False
+    assert any("identifier-like" in note for note in columns_by_name["order_id"].notes)
+    assert any("identifier-like" in note for note in columns_by_name["reference_code"].notes)
+    assert any("constant" in note for note in columns_by_name["status"].notes)
+    assert any("datetime text" in note for note in columns_by_name["event_time"].notes)
+    assert any("normalize" in note for note in columns_by_name["event_time"].notes)
+    assert columns_by_name["quantity"].notes == ()
+
+
+def test_high_cardinality_categorical_notes_do_not_trigger_for_small_human_labels() -> None:
+    frame = pd.DataFrame(
+        [
+            {"city": "Paris", "segment": "consumer"},
+            {"city": "Berlin", "segment": "consumer"},
+            {"city": "Rome", "segment": "consumer"},
+            {"city": "Madrid", "segment": "consumer"},
+            {"city": "Lisbon", "segment": "consumer"},
+        ]
+    )
+
+    profile = profiler.build_dataset_profile(frame)
+    columns_by_name = {column.name: column for column in profile.columns_profile}
+
+    assert columns_by_name["city"].notes == ()
+    assert any("constant" in note for note in columns_by_name["segment"].notes)

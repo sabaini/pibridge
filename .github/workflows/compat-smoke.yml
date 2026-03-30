@@ -1,0 +1,55 @@
+name: Compatibility smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 9 * * 1'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Resolve smoke configuration
+        id: config
+        env:
+          SECRET_PROVIDER: ${{ secrets.PI_RPC_PROVIDER }}
+          SECRET_MODEL: ${{ secrets.PI_RPC_MODEL }}
+        run: |
+          provider="${SECRET_PROVIDER}"
+          model="${SECRET_MODEL}"
+          if [[ -z "${provider}" || -z "${model}" ]]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Live smoke skipped: set repository secrets PI_RPC_PROVIDER and PI_RPC_MODEL to enable this workflow." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+          echo "provider=${provider}" >> "$GITHUB_OUTPUT"
+          echo "model=${model}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        if: steps.config.outputs.configured == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev,examples]'
+
+      - name: Install pi CLI
+        if: steps.config.outputs.configured == 'true'
+        run: npm install -g @mariozechner/pi-coding-agent
+
+      - name: Live integration smoke tests
+        if: steps.config.outputs.configured == 'true'
+        env:
+          PI_RPC_PROVIDER: ${{ steps.config.outputs.provider }}
+          PI_RPC_MODEL: ${{ steps.config.outputs.model }}
+          PI_RPC_REQUIRE_INTEGRATION: '1'
+        run: pytest -m integration tests/integration/test_live_smoke.py

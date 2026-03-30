@@ -6,6 +6,7 @@ from tests.example_support import load_dataset_triage_module
 
 pd = pytest.importorskip("pandas")
 
+models = load_dataset_triage_module("models")
 profiler = load_dataset_triage_module("profiler")
 prompts = load_dataset_triage_module("prompts")
 
@@ -25,8 +26,6 @@ def test_build_initial_analysis_prompt_is_structured_bounded_and_sanitized() -> 
     prompt = prompts.build_initial_analysis_prompt(profile, dataset_name="customers.csv")
 
     assert "You are helping triage a CSV dataset." in prompt
-    assert "Privacy guardrail" in prompt
-    assert "Raw categorical values from likely sensitive columns are redacted by default." in prompt
     assert "Dataset profile:" in prompt
     assert "Please provide:" in prompt
     assert "1. A short overview" in prompt
@@ -37,10 +36,8 @@ def test_build_initial_analysis_prompt_is_structured_bounded_and_sanitized() -> 
     assert "rows: 5" in prompt
     assert "duplicate rows: 0" in prompt
     assert "country: US (2), us (1), United States (1)" in prompt
-    assert "customer_id: [redacted raw values; unique non-null=5; reason=identifier-like values]" in prompt
-    assert "email: [redacted raw values; unique non-null=2; reason=email/contact-like values]" in prompt
-    assert "alice@example.com" not in prompt
-    assert "C001" not in prompt
+    assert "customer_id: C001 (1), C002 (1), C003 (1), C004 (1), C005 (1)" in prompt
+    assert "email: alice@example.com (1), eve@example.com (1)" in prompt
 
 
 def test_build_initial_analysis_prompt_truncates_wide_schema_and_long_categorical_values() -> None:
@@ -64,7 +61,30 @@ def test_build_initial_analysis_prompt_truncates_wide_schema_and_long_categorica
     assert "very-long-category-value-very-long-c..." in prompt
 
 
-def test_safe_categorical_highlights_are_prioritized_ahead_of_redacted_sensitive_columns() -> None:
+def test_build_initial_analysis_prompt_adds_sample_caveat_when_profile_is_bounded() -> None:
+    frame = pd.DataFrame(
+        [
+            {"customer_id": "C001", "country": "US", "status": "active"},
+            {"customer_id": "C002", "country": "us", "status": "active"},
+            {"customer_id": "C003", "country": "US ", "status": "active"},
+        ]
+    )
+    profile = profiler.build_dataset_profile(frame)
+    load_metadata = models.CsvLoadMetadata(
+        options=models.CsvLoadOptions(max_rows=3),
+        loaded_rows=3,
+        row_limit=3,
+        truncated=True,
+        notices=(models.LoadNotice(level="warning", code="row_limit", message="Profiled only the first 3 rows."),),
+    )
+
+    prompt = prompts.build_initial_analysis_prompt(profile, dataset_name="sampled.csv", load_metadata=load_metadata)
+
+    assert "Dataset profile is based on the first 3 rows only" in prompt
+    assert "sampled.csv" in prompt
+
+
+def test_categorical_highlights_are_shared_without_redaction() -> None:
     frame = pd.DataFrame(
         [
             {
@@ -118,5 +138,7 @@ def test_safe_categorical_highlights_are_prioritized_ahead_of_redacted_sensitive
 
     prompt = prompts.build_initial_analysis_prompt(profile, dataset_name="budget.csv")
 
-    assert "status: active (3), inactive (1), pending (1)" in prompt
-    assert "country: US (3), CA (2)" in prompt
+    assert "customer_id: C001 (1), C002 (1), C003 (1), C004 (1), C005 (1)" in prompt
+    assert "email: alice@example.com (1), bob@example.com (1), carol@example.com (1), dave@example.com (1), eve@example.com (1)" in prompt
+    assert "identifier-like values" in prompt
+    assert "[redacted raw values" not in prompt

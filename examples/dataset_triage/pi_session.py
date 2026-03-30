@@ -72,7 +72,15 @@ class DatasetTriageSession:
     def ask_follow_up(self, question: str, *, on_update: Callable[[str], None] | None = None) -> str:
         if not self._has_completed_initial_analysis:
             raise DatasetTriageSessionError("Analyze the dataset with Pi before asking follow-up questions.")
-        return self._run_stream(lambda client: client.prompt(question, streaming_behavior="followUp"), on_update=on_update)
+        return self._run_stream(lambda client: client.continue_prompt(question), on_update=on_update)
+
+    def export_session_html(self, output_path: str | None = None) -> str:
+        client = self._ensure_client()
+        try:
+            return str(client.export_html(output_path=output_path).path)
+        except _SESSION_ERRORS as exc:
+            self._reset_subscription_if_closed()
+            raise DatasetTriageSessionError(f"Pi request failed while exporting the session: {exc}") from exc
 
     def _ensure_client(self) -> Any:
         if self._client is None:

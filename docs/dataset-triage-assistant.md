@@ -252,12 +252,12 @@ Note: if storing the raw client object in session state proves awkward, the app 
 - accept uploaded file bytes
 - decode and parse with `pandas.read_csv`
 - catch common parsing errors
-- optionally support simple parse hints later (`sep`, encoding), but not in MVP
+- support simple parse hints (`sep`, encoding, header presence) and bounded first-N profiling for large files
 
 ### API sketch
 
 ```python
-def load_csv(uploaded_file) -> pd.DataFrame:
+def load_csv(uploaded_file, *, options: CsvLoadOptions | None = None) -> LoadedDataset:
     ...
 ```
 
@@ -387,7 +387,7 @@ Please provide:
 
 ### Follow-up prompt handling
 
-For the current shipped example, follow-up questions are sent with `prompt(..., streaming_behavior="followUp")`. That is the verified path that starts a new streamed turn immediately on the tested upstream build. Raw `follow_up()` requests are still part of the public RPC surface, but in the compatibility suite they queue pending work instead of starting an immediate streamed turn on their own.
+For the current shipped example, follow-up questions are sent with `PiClient.continue_prompt()`. That additive helper intentionally maps to `prompt(..., streaming_behavior="followUp")`, which is the verified path that starts a new streamed turn immediately on the tested upstream build. Raw `follow_up()` requests are still part of the public RPC surface, but in the compatibility suite they queue pending work instead of starting an immediate streamed turn on their own.
 
 ---
 
@@ -432,10 +432,10 @@ The implementation will primarily use:
 - `new_session()`
 - `set_session_name(...)`
 - `prompt(...)`
-- `prompt(..., streaming_behavior="followUp")` for user follow-ups
+- `continue_prompt(...)` for user follow-ups
 - `follow_up(...)` only if you intentionally want to exercise the raw queued follow-up RPC behavior
 - `get_last_assistant_text()`
-- optionally `export_html(...)` later
+- `export_html(...)` for optional session export
 
 ### Streaming behavior
 
@@ -471,7 +471,7 @@ upload CSV
 
 ```text
 user enters question
-  -> client.prompt(..., streaming_behavior="followUp")
+  -> client.continue_prompt(...)
   -> consume streamed events
   -> render response incrementally
   -> append to conversation history
@@ -486,7 +486,8 @@ user enters question
 - app startup: initialize Pi client lazily
 - file upload: call `new_session()` and optionally `set_session_name()`
 - initial analysis: `prompt()`
-- subsequent user questions: `prompt(..., streaming_behavior="followUp")`
+- subsequent user questions: `continue_prompt()`
+- optional session export: `export_html()`
 - app shutdown/reset: `close()`
 
 ### Session naming
@@ -556,11 +557,11 @@ Design implications:
 
 - do not send the full dataset by default
 - send only compact summaries and small representative samples where useful
-- avoid including obviously sensitive columns verbatim in the prompt if not needed
-- explicitly mark likely sensitive columns (for example identifiers and emails) and redact their raw categorical values before sending the prompt
+- do not send the full dataset by default
+- send only compact summaries and small representative samples where useful
 - let the user inspect the exact bounded prompt that will be sent to Pi
 
-The MVP will not implement full PII detection, but the design should avoid gratuitous raw data inclusion.
+The shipped example still does **not** implement privacy redaction, but it keeps the prompt bounded and lets the user inspect the exact prompt/transcript content before export or model submission.
 
 ---
 
@@ -582,8 +583,10 @@ With a real or mock-backed Pi process, test:
 
 - initial session setup for a dataset
 - prompt submission and streaming completion
-- follow-up question behavior in the same session via `prompt(..., streaming_behavior="followUp")`
+- follow-up question behavior in the same session via `continue_prompt()`
 - graceful handling of Pi startup/timeout failures
+- bounded-load warnings and sampled-prompt caveats for large datasets
+- prompt/transcript export plus optional session HTML export
 
 ### Example fixtures
 
@@ -603,7 +606,7 @@ Recommended debugging artifacts:
 
 - log dataset shape and profile generation steps
 - log when a new Pi session starts
-- log prompt submission boundaries, not full sensitive content
+- log prompt submission boundaries rather than full prompt bodies
 - log event lifecycle markers (`agent_start`, `agent_end`)
 - display a developer-friendly expandable debug panel later if needed
 
@@ -621,9 +624,10 @@ examples/dataset_triage/
   profiler.py
   prompts.py
   pi_session.py
+  export.py
   models.py
   sample_data/
-    customers.csv
+    co2-emissions-per-capita.csv.gz
 ```
 
 ### File responsibilities
@@ -633,7 +637,8 @@ examples/dataset_triage/
 - `profiler.py`: DataFrame -> `DatasetProfile`
 - `prompts.py`: prompt generation
 - `pi_session.py`: wrapper around `PiClient`
-- `models.py`: dataclasses for structured profile data
+- `export.py`: deterministic transcript/export helpers
+- `models.py`: dataclasses for structured profile data and load metadata
 
 ---
 
@@ -664,7 +669,7 @@ examples/dataset_triage/
 
 - cleaner layout
 - better errors
-- sample CSV
+- sample dataset
 - README/run instructions
 
 ---
@@ -673,8 +678,7 @@ examples/dataset_triage/
 
 - Should the app offer a manual dataset summary edit box before sending to Pi?
 - Should the app include a small sample-row excerpt in addition to aggregate stats?
-- Should follow-up questions use `prompt()` or `follow_up()` consistently?
-  - current verified recommendation: `prompt()` for the initial dataset analysis and `prompt(..., streaming_behavior="followUp")` for later turns
+- The shipped example now standardizes on `prompt()` for the initial dataset analysis and `continue_prompt()` for later turns; raw `follow_up()` remains available only for lower-level protocol testing.
 - Should we add optional charts in MVP or keep the first version text-first?
   - recommendation: keep MVP text-first
 
@@ -688,4 +692,4 @@ Build the MVP as a small Streamlit app with a strict separation between:
 - prompt construction
 - Pi session/streaming integration
 
-This keeps the app easy to understand, showcases pibridge clearly, and leaves a clean path for later additions such as charts, HTML export, or richer profiling.
+This keeps the app easy to understand, showcases pibridge clearly, and leaves a clean path for later additions such as charts or richer profiling while already covering bounded profiling, export, and the recommended follow-up helper.
