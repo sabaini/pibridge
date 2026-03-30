@@ -26,17 +26,18 @@ class EventSubscription(Generic[T]):
         with self._condition:
             return self._closed
 
-    def publish(self, item: T) -> None:
+    def publish(self, item: T) -> bool:
         with self._condition:
             if self._closed or self._error is not None:
-                return
+                return False
             if len(self._items) >= self._maxsize:
                 self._error = PiSubscriptionOverflowError("event subscription queue overflowed")
                 self._closed = True
                 self._condition.notify_all()
-                return
+                return False
             self._items.append(item)
             self._condition.notify()
+            return True
 
     def fail(self, error: BaseException) -> None:
         with self._condition:
@@ -84,16 +85,19 @@ class SubscriptionHub(Generic[T]):
             self._subscriptions.append(subscription)
         return subscription
 
-    def publish(self, item: T) -> None:
+    def publish(self, item: T) -> int:
         with self._lock:
             subscriptions = list(self._subscriptions)
         survivors: list[EventSubscription[T]] = []
+        delivered = 0
         for subscription in subscriptions:
-            subscription.publish(item)
+            if subscription.publish(item):
+                delivered += 1
             if not subscription.closed:
                 survivors.append(subscription)
         with self._lock:
             self._subscriptions = survivors
+        return delivered
 
     def fail_all(self, error: BaseException) -> None:
         with self._lock:

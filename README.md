@@ -179,20 +179,29 @@ Dialog methods block Pi until the host responds with one of:
 Example:
 
 ```python
+import queue
+
 from pi_rpc import PiClient
 from pi_rpc.events import ExtensionUiRequestEvent
 from pi_rpc.protocol_types import ConfirmExtensionUiRequest, SelectExtensionUiRequest
 
 with PiClient() as client:
     subscription = client.subscribe_events(maxsize=200)
+    saw_extension_ui_request = False
 
     while True:
-        event = subscription.get(timeout=30)
+        try:
+            event = subscription.get(timeout=1 if saw_extension_ui_request else 30)
+        except queue.Empty:
+            if saw_extension_ui_request:
+                break
+            raise TimeoutError("Timed out waiting for extension UI events") from None
         if event.type == "agent_end":
             break
         if not isinstance(event, ExtensionUiRequestEvent):
             continue
 
+        saw_extension_ui_request = True
         request = event.request
         if isinstance(request, SelectExtensionUiRequest):
             client.respond_extension_ui_value(request.id, request.options[0])
@@ -201,6 +210,8 @@ with PiClient() as client:
         else:
             client.respond_extension_ui_cancelled(request.id)
 ```
+
+Extension commands may emit only `ExtensionUiRequestEvent` records and no `agent_end`, so hosts should stop on either `agent_end` or an application-defined idle/completion condition.
 
 Out of scope in v1: TUI-only extension APIs such as `ctx.ui.custom()` and other direct terminal component hooks that are not carried by the RPC protocol.
 

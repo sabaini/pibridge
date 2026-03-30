@@ -263,9 +263,10 @@ Supported in v1 for the RPC-safe sub-protocol.
 
 Host behavior is intentionally explicit:
 
-* subscribe first, then wait for `ExtensionUiRequestEvent`
+* subscribe first, then wait for `ExtensionUiRequestEvent`; dialog requests require a live subscriber that can keep draining the queue
 * reply to dialog methods with `respond_extension_ui_value(...)`, `respond_extension_ui_confirmed(...)`, or `respond_extension_ui_cancelled(...)`
 * fire-and-forget methods may be rendered by the host or ignored safely
+* extension commands may complete with only `ExtensionUiRequestEvent` records and no `agent_end`, so hosts should stop on either `agent_end` or an application-defined idle/completion condition
 * the client does not emulate Pi's TUI; it only forwards typed requests and writes typed responses ([GitHub][1])
 
 Out of scope even with extension UI support:

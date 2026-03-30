@@ -12,7 +12,7 @@ import pytest
 
 from pi_rpc.commands import make_command
 from pi_rpc.events import AgentStartEvent, ExtensionUiRequestEvent
-from pi_rpc.exceptions import PiCommandError, PiProcessExitedError, PiStartupError, PiTimeoutError
+from pi_rpc.exceptions import PiCommandError, PiProcessExitedError, PiProtocolError, PiStartupError, PiSubscriptionOverflowError, PiTimeoutError
 from pi_rpc.jsonl import JsonlReader, serialize_json_line
 from pi_rpc.models import PiClientOptions
 from pi_rpc.process import PiProcess
@@ -371,6 +371,77 @@ def test_process_publishes_dialog_extension_ui_requests() -> None:
     assert isinstance(event.request, ConfirmExtensionUiRequest)
     assert event.request.title == "Clear session?"
     assert event.request.message == "All messages will be lost."
+
+
+
+def test_process_clears_active_workflow_after_extension_ui_dialog_response() -> None:
+    children: list[FakeChildProcess] = []
+    process = make_process(children)
+    subscription = process.subscribe_events(maxsize=10)
+
+    start_process_for_test(process)
+
+    def on_command(payload: dict[str, Any]) -> None:
+        if payload["type"] == "prompt":
+            children[0].send_record(success_response(payload["id"], payload["type"]))
+
+    children[0].on_command = on_command
+
+    process.send_command(make_command("prompt", message="/rpc-input"))
+    assert process.active_workflow is True
+
+    children[0].send_record({"type": "extension_ui_request", "id": "ui-input", "method": "input", "title": "Enter a value"})
+
+    event = subscription.get(timeout=0.2)
+    assert isinstance(event, ExtensionUiRequestEvent)
+    assert process.active_workflow is True
+
+    process.respond_extension_ui_value("ui-input", "bridge")
+
+    assert process.active_workflow is False
+
+
+
+def test_process_requires_live_subscription_for_dialog_extension_ui_requests() -> None:
+    children: list[FakeChildProcess] = []
+    process = make_process(children)
+
+    start_process_for_test(process)
+
+    def on_command(payload: dict[str, Any]) -> None:
+        if payload["type"] == "new_session":
+            children[0].send_record({"type": "extension_ui_request", "id": "ui-confirm", "method": "confirm", "title": "Clear session?"})
+
+    children[0].on_command = on_command
+
+    with pytest.raises(PiProtocolError, match=r"subscribe_events\(\)"):
+        process.send_command(make_command("new_session"), timeout=0.2)
+
+
+
+def test_process_dialog_extension_ui_request_fails_fast_after_subscription_overflow() -> None:
+    children: list[FakeChildProcess] = []
+    process = make_process(children)
+    subscription = process.subscribe_events(maxsize=1)
+
+    start_process_for_test(process)
+
+    def on_command(payload: dict[str, Any]) -> None:
+        if payload["type"] == "new_session":
+            children[0].send_record({"type": "extension_ui_request", "id": "ui-notify", "method": "notify", "message": "Heads up"})
+            children[0].send_record({"type": "extension_ui_request", "id": "ui-confirm", "method": "confirm", "title": "Clear session?"})
+
+    children[0].on_command = on_command
+
+    with pytest.raises(PiProtocolError, match=r"subscribe_events\(\)"):
+        process.send_command(make_command("new_session"), timeout=0.2)
+
+    first_event = subscription.get(timeout=0.2)
+    assert isinstance(first_event, ExtensionUiRequestEvent)
+    assert isinstance(first_event.request, NotifyExtensionUiRequest)
+    with pytest.raises(PiSubscriptionOverflowError):
+        subscription.get(timeout=0.2)
+
 
 
 def test_process_times_out_and_cleans_pending_request() -> None:

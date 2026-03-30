@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .commands import RpcCommand, ensure_command_id, make_command, serialize_command
-from .events import AgentEndEvent, AgentEvent, AgentStartEvent, parse_event
+from .events import AgentEndEvent, AgentEvent, AgentStartEvent, ExtensionUiRequestEvent, parse_event
 from .exceptions import PiProcessExitedError, PiProtocolError, PiStartupError, PiTimeoutError
 from .jsonl import JsonlReader, serialize_json_line
 from .models import PiClientOptions
@@ -83,6 +83,10 @@ class PendingRequestRegistry:
         with self._lock:
             self._abandoned.clear()
 
+    def has_pending(self) -> bool:
+        with self._lock:
+            return bool(self._pending)
+
 
 class PiProcess:
     def __init__(self, options: PiClientOptions) -> None:
@@ -99,6 +103,7 @@ class PiProcess:
         self._closed = False
         self._active_workflow = False
         self._pending_workflow_start_id: str | None = None
+        self._pending_extension_ui_request_ids: set[str] = set()
         self._idle_timer: threading.Timer | None = None
         self._stream_failure: BaseException | None = None
         self._restartable_idle_failure = False
@@ -112,7 +117,11 @@ class PiProcess:
             return self._has_active_workflow_locked()
 
     def _has_active_workflow_locked(self) -> bool:
-        return self._active_workflow or self._pending_workflow_start_id is not None
+        return (
+            self._active_workflow
+            or self._pending_workflow_start_id is not None
+            or bool(self._pending_extension_ui_request_ids)
+        )
 
     def subscribe_events(self, maxsize: int = 1000) -> EventSubscription[AgentEvent]:
         return self._subscriptions.subscribe(maxsize=maxsize)
@@ -132,6 +141,7 @@ class PiProcess:
                 return
             self._closed = True
             self._pending_workflow_start_id = None
+            self._pending_extension_ui_request_ids.clear()
             self._active_workflow = False
         self._cancel_idle_timer()
         self._stop_process(graceful=True)
@@ -185,6 +195,10 @@ class PiProcess:
             if self._process is None:
                 raise PiProcessExitedError("Pi process is not running")
             self._write_record_locked(payload)
+            request_id = payload.get("id")
+            if isinstance(request_id, str):
+                self._pending_extension_ui_request_ids.discard(request_id)
+            self._schedule_idle_timer_locked()
 
     def _ensure_started_locked(self) -> bool:
         if self._process is not None and self._process.poll() is None:
@@ -272,6 +286,7 @@ class PiProcess:
         self._stream_failure = None
         self._restartable_idle_failure = False
         self._pending_workflow_start_id = None
+        self._pending_extension_ui_request_ids.clear()
         self._startup_pending = None
         self._startup_ready_generation = 0
         self._pending.clear_abandoned()
@@ -389,7 +404,20 @@ class PiProcess:
                 self._pending_workflow_start_id = None
                 self._active_workflow = False
                 self._schedule_idle_timer_locked()
-        self._subscriptions.publish(event)
+            elif isinstance(event, ExtensionUiRequestEvent):
+                self._pending_workflow_start_id = None
+                if event.request.method in {"select", "confirm", "input", "editor"}:
+                    self._pending_extension_ui_request_ids.add(event.request.id)
+                self._schedule_idle_timer_locked()
+        delivered = self._subscriptions.publish(event)
+        if isinstance(event, ExtensionUiRequestEvent) and event.request.method in {"select", "confirm", "input", "editor"} and delivered == 0:
+            self._handle_stream_failure(
+                PiProtocolError(
+                    "Received dialog extension_ui_request without a live event subscription that could accept it; "
+                    "call subscribe_events() and drain the queue before issuing commands that may require extension UI"
+                ),
+                generation=generation,
+            )
 
     def _handle_stream_failure(self, error: BaseException, generation: int) -> None:
         with self._lock:
@@ -401,6 +429,7 @@ class PiProcess:
             active = self._has_active_workflow_locked()
             self._restartable_idle_failure = not active and isinstance(error, PiProcessExitedError)
             self._pending_workflow_start_id = None
+            self._pending_extension_ui_request_ids.clear()
             self._active_workflow = False
         self._pending.fail_all(error)
         if active:
@@ -446,7 +475,14 @@ class PiProcess:
     def _schedule_idle_timer_locked(self) -> None:
         self._cancel_idle_timer()
         timeout = self._options.idle_timeout
-        if timeout is None or timeout <= 0 or self._has_active_workflow_locked() or self._closed or self._process is None:
+        if (
+            timeout is None
+            or timeout <= 0
+            or self._has_active_workflow_locked()
+            or self._pending.has_pending()
+            or self._closed
+            or self._process is None
+        ):
             return
         self._idle_timer = threading.Timer(timeout, self._handle_idle_timeout)
         self._idle_timer.daemon = True
