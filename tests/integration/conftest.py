@@ -210,6 +210,40 @@ def live_pi_client(
 
 
 @pytest.fixture
+def smoke_pi_client(
+    integration_ready: None,
+    isolated_pi_workspace: Path,
+    command_timeout: float,
+    mock_prompt_map: dict[str, str],
+    mock_context_map: dict[str, str],
+) -> Iterator[PiClient]:
+    if _live_override_enabled():
+        client = _make_client(
+            workspace=isolated_pi_workspace,
+            command_timeout=command_timeout,
+            provider=os.environ["PI_RPC_PROVIDER"],
+            model=os.environ["PI_RPC_MODEL"],
+        )
+        with client:
+            yield client
+        return
+
+    client = _make_client(
+        workspace=isolated_pi_workspace,
+        command_timeout=command_timeout,
+        extra_args=("-e", str(MOCK_EXTENSION_PATH)),
+        env=_mock_env(mock_prompt_map, mock_context_map),
+    )
+    with client:
+        available_models = client.get_available_models()
+        assert any(model.provider == MOCK_PROVIDER_NAME and model.id == MOCK_MODEL_ID for model in available_models)
+        selected_model = client.set_model(MOCK_PROVIDER_NAME, MOCK_MODEL_ID)
+        assert selected_model.provider == MOCK_PROVIDER_NAME
+        assert selected_model.id == MOCK_MODEL_ID
+        yield client
+
+
+@pytest.fixture
 def mock_pi_client(
     integration_ready: None,
     isolated_pi_workspace: Path,
