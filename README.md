@@ -266,6 +266,7 @@ If `pi` is not installed or the bundled mock fixture is missing, the integration
 - `examples/session_flow.py`
 - `examples/bash_then_prompt.py`
 - `examples/extension_ui.py`
+- `examples/review_gate_ui.py` with `examples/extensions/review_gate.ts` - a realistic human-approval flow that exercises `select`, `confirm`, `input`, `editor`, `notify`, `setStatus`, `setWidget`, `setTitle`, and `set_editor_text`
 - `examples/dataset_triage/` - Streamlit CSV/CSV.gz triage assistant with parse hints, bounded first-N profiling, prompt/transcript download, session HTML export, and Pi follow-ups via `continue_prompt()` (`just dataset-triage` bootstraps `.venv` and installs `.[examples]`)
 
 ## Compatibility and release workflow
