@@ -7,7 +7,7 @@ It starts Pi lazily, communicates over strict JSONL on stdin/stdout, exposes typ
 ## Features
 
 - lazy subprocess startup; `PiClient()` does not spawn Pi
-- one Python method per documented v1 RPC command
+- one Python method per documented RPC command
 - strict LF-delimited JSONL framing
 - typed parsing for models, messages, responses, and events
 - multiple event subscribers via bounded per-subscriber queues
@@ -94,7 +94,7 @@ Important lifecycle rules:
 
 ### Commands
 
-The public client mirrors the documented RPC surface:
+The public client mirrors Pi's documented RPC surface:
 
 - `prompt()`, `steer()`, `follow_up()`, `abort()`
 - additive convenience helper: `continue_prompt()` for the recommended immediate streamed follow-up path
@@ -110,7 +110,7 @@ The public client mirrors the documented RPC surface:
 - `respond_extension_ui_value()`, `respond_extension_ui_confirmed()`, `respond_extension_ui_cancelled()` for RPC-safe extension UI dialogs
 - low-level `send_command()` when you need direct protocol access
 
-Notable argument details from the current client:
+Notable argument details:
 
 - `prompt()`, `steer()`, `follow_up()`, and `continue_prompt()` accept optional image content blocks (see `pi_rpc.protocol_types.ImageContent`)
 - `prompt()` also accepts `streaming_behavior="steer" | "followUp"`
@@ -213,19 +213,20 @@ with PiClient() as client:
 
 Extension commands may emit only `ExtensionUiRequestEvent` records and no `agent_end`, so hosts should stop on either `agent_end` or an application-defined idle/completion condition.
 
-Out of scope in v1: TUI-only extension APIs such as `ctx.ui.custom()` and other direct terminal component hooks that are not carried by the RPC protocol.
+Out of scope: TUI-only extension APIs such as `ctx.ui.custom()` and other direct terminal component hooks that are not carried by the RPC protocol.
 
 ## Running tests
 
 ### Unit tests
 
 ```bash
-. .venv/bin/activate
-pytest -m 'not integration'
-ruff check .
-mypy src
-python -m build
+just test
+just lint
+just typecheck
+just build
 ```
+
+Or run `just check` to execute lint, type checking, unit tests, and build validation together.
 
 Example tests that need `pandas` are skipped unless you also install `.[examples]`.
 
@@ -243,9 +244,10 @@ Default requirements:
 Run them with:
 
 ```bash
-. .venv/bin/activate
-pytest -m integration
+just test-integration
 ```
+
+Or run `just check-all` to execute the standard checks plus integration tests.
 
 Set `PI_RPC_REQUIRE_INTEGRATION=1` when skips are unacceptable, such as CI jobs that are expected to install `pi` first. In that mode, the suite fails loudly instead of silently skipping when `pi` or the bundled mock fixture is unavailable.
 
@@ -279,7 +281,7 @@ If `pi` is not installed or the bundled mock fixture is missing, the integration
 ## Current limits
 
 - one active workflow per `PiClient`
-- synchronous/threaded API only in v1
+- synchronous/threaded API only
 - extension UI support is limited to the RPC-safe methods documented by Pi; TUI-only APIs such as `ctx.ui.custom()` remain out of scope
 - compatibility is enforced by tests and documented support policy, not by a protocol handshake
 - some upstream commands still have behavior quirks; the public docs describe the runtime behavior exercised by the deterministic integration suite rather than assuming every documented RPC command streams identically
