@@ -5,6 +5,7 @@ import queue
 import pytest
 
 from pi_rpc import PiClient
+from pi_rpc.events import QueueUpdateEvent
 from tests.integration.conftest import _prompt_and_get_text, _wait_for_agent_end, _wait_for_event, mock_assistant_message, mock_context_key, mock_user_message
 
 pytestmark = pytest.mark.integration
@@ -101,6 +102,11 @@ def test_follow_up_command_currently_queues_pending_work_without_immediate_strea
 
     _wait_for_event(subscription, "compaction_start")
     _wait_for_event(subscription, "compaction_end")
+    queue_update = _wait_for_event(subscription, "queue_update")
+
+    assert isinstance(queue_update, QueueUpdateEvent)
+    assert queue_update.follow_up == ("Repeat the previous assistant response exactly.",)
+    assert queue_update.steering == ()
 
     with pytest.raises(queue.Empty):
         subscription.get(timeout=1.0)

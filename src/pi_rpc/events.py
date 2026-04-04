@@ -126,6 +126,13 @@ class ExtensionErrorEvent:
 
 
 @dataclass(frozen=True)
+class QueueUpdateEvent:
+    steering: tuple[str, ...]
+    follow_up: tuple[str, ...]
+    type: str = "queue_update"
+
+
+@dataclass(frozen=True)
 class ExtensionUiRequestEvent:
     request: ExtensionUiRequest
     type: str = "extension_ui_request"
@@ -147,6 +154,7 @@ AgentEvent = (
     | AutoRetryStartEvent
     | AutoRetryEndEvent
     | ExtensionErrorEvent
+    | QueueUpdateEvent
     | ExtensionUiRequestEvent
 )
 
@@ -256,6 +264,11 @@ def parse_event(payload: Any) -> AgentEvent:
             event=_require_str(payload, "event"),
             error=_require_str(payload, "error"),
         )
+    if event_type == "queue_update":
+        return QueueUpdateEvent(
+            steering=_require_str_list(payload, "steering"),
+            follow_up=_require_str_list(payload, "followUp"),
+        )
     if event_type == "extension_ui_request":
         return ExtensionUiRequestEvent(request=parse_extension_ui_request(payload))
     raise PiProtocolError(f"Unsupported event type: {event_type!r}")
@@ -273,3 +286,12 @@ def _require_int(payload: dict[str, Any], key: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool):
         raise PiProtocolError(f"Expected '{key}' to be an integer")
     return value
+
+
+def _require_str_list(payload: dict[str, Any], key: str) -> tuple[str, ...]:
+    value = payload.get(key)
+    if not isinstance(value, list):
+        raise PiProtocolError(f"Expected '{key}' to be a list")
+    if any(not isinstance(item, str) for item in value):
+        raise PiProtocolError(f"Expected '{key}' to contain only strings")
+    return tuple(value)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from pi_rpc.commands import RpcCommand, serialize_command
-from pi_rpc.events import AutoCompactionEndEvent, AutoCompactionStartEvent, ExtensionUiRequestEvent, MessageUpdateEvent, parse_event
+from pi_rpc.events import AutoCompactionEndEvent, AutoCompactionStartEvent, ExtensionUiRequestEvent, MessageUpdateEvent, QueueUpdateEvent, parse_event
 from pi_rpc.exceptions import PiCommandError, PiProtocolError
 from pi_rpc.protocol_types import (
     AssistantMessage,
@@ -330,6 +330,13 @@ def test_parse_event_supports_extension_ui_requests() -> None:
     assert isinstance(event, ExtensionUiRequestEvent)
     assert event.request.id == "req-1"
     assert event.request.method == "confirm"
+
+
+def test_parse_event_supports_queue_updates() -> None:
+    event = parse_event({"type": "queue_update", "steering": ["Prefer concise wording."], "followUp": ["Repeat it."]})
+    assert isinstance(event, QueueUpdateEvent)
+    assert event.steering == ("Prefer concise wording.",)
+    assert event.follow_up == ("Repeat it.",)
 
 
 @pytest.mark.parametrize(
