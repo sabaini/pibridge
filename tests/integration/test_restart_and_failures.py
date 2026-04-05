@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import shlex
+import sys
 import time
 
 import pytest
 
 from pi_rpc import PiClient
+from pi_rpc.exceptions import PiTimeoutError
 from tests.integration.conftest import MOCK_MODEL_ID, MOCK_PROVIDER_NAME, _prompt_and_get_text, _wait_for_agent_end
 
 pytestmark = pytest.mark.integration
@@ -72,4 +75,15 @@ def test_stream_failure_ends_the_turn_and_client_can_continue(mock_pi_client: Pi
     assert assistant.stop_reason == "error"
     assert assistant.error_message == "mock failure"
     assert mock_pi_client.get_last_assistant_text() == "partial"
+    assert _prompt_and_get_text(mock_pi_client, "Reply with exactly: OK") == "OK"
+
+
+
+def test_timed_out_bash_late_completion_does_not_poison_the_next_command(mock_pi_client: PiClient) -> None:
+    command = f"{shlex.quote(sys.executable)} -c \"import time; time.sleep(0.5); print('late bash')\""
+
+    with pytest.raises(PiTimeoutError):
+        mock_pi_client.bash(command, timeout=0.1)
+
+    time.sleep(0.75)
     assert _prompt_and_get_text(mock_pi_client, "Reply with exactly: OK") == "OK"

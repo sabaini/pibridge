@@ -3,6 +3,11 @@ from __future__ import annotations
 import queue
 
 from pi_rpc import PiClient
+
+try:
+    from examples.runtime_config import build_example_client_options
+except ImportError:  # pragma: no cover - supports `python examples/extension_ui.py`
+    from runtime_config import build_example_client_options
 from pi_rpc.events import AgentEvent, ExtensionUiRequestEvent
 from pi_rpc.protocol_types import (
     ConfirmExtensionUiRequest,
@@ -55,7 +60,7 @@ def run_until_idle(
 
 
 def main() -> None:
-    with PiClient() as client:
+    with PiClient(build_example_client_options()) as client:
         subscription = client.subscribe_events(maxsize=200)
 
         # Replace this with a real prompt or extension command that triggers ctx.ui.*.
@@ -63,6 +68,7 @@ def main() -> None:
         # so this example exits after the stream goes idle.
         client.prompt("/rpc-input")
         run_until_idle(client, subscription)
+        print("[done/extension_ui]")
 
 
 if __name__ == "__main__":

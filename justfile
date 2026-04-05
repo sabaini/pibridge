@@ -31,6 +31,9 @@ check: lint typecheck test build
 
 check-all: check test-integration
 
+install-smoke: build
+    "$({{python_cmd}})" tests/packaging/install_smoke.py
+
 clean:
     rm -rf build dist .pytest_cache .ruff_cache .mypy_cache
 

@@ -91,6 +91,34 @@ def test_extension_ui_editor_round_trip(mock_extension_ui_client: PiClient) -> N
     assert notify_request.message == "editor:Line A|Line B"
 
 
+@pytest.mark.parametrize(
+    ("command", "method", "expected_message"),
+    [
+        ("/rpc-select", "select", "select:cancelled"),
+        ("/rpc-input", "input", "input:cancelled"),
+        ("/rpc-editor", "editor", "editor:cancelled"),
+    ],
+)
+def test_extension_ui_dialog_cancellation_round_trip(
+    mock_extension_ui_client: PiClient,
+    command: str,
+    method: str,
+    expected_message: str,
+) -> None:
+    subscription = mock_extension_ui_client.subscribe_events(maxsize=50)
+
+    mock_extension_ui_client.prompt(command)
+
+    request_event = _wait_for_extension_ui_request(subscription, method)
+    mock_extension_ui_client.respond_extension_ui_cancelled(request_event.request.id)
+
+    notify_event = _wait_for_extension_ui_request(subscription, "notify")
+    notify_request = cast(NotifyExtensionUiRequest, notify_event.request)
+    assert notify_request.message == expected_message
+    assert notify_request.notify_type == "info"
+
+
+
 def test_extension_ui_confirm_can_cancel_new_session(mock_extension_ui_client: PiClient) -> None:
     subscription = mock_extension_ui_client.subscribe_events(maxsize=50)
     results: list[object] = []

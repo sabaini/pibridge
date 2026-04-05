@@ -13,8 +13,11 @@ The repository currently treats the following as the supported compatibility con
 - Required upstream behavior:
   - the full typed command/response/event surface covered by unit tests
   - the mock-backed integration suite in `tests/integration/`
+  - real-subprocess public-API contract checks for command dispatch, lifecycle, subscriptions, retries, and accumulated bash context
   - the recommended immediate streamed follow-up path exposed as `PiClient.continue_prompt()`
   - the RPC-safe extension UI request/response flow exercised by `tests/integration/test_extension_ui.py`
+  - end-to-end smoke runs for the shipped `examples/*.py` scripts and the Streamlit dataset-triage app
+  - installed-wheel smoke from `tests/packaging/install_smoke.py`, executed from a clean virtualenv/cwd instead of the source tree
 
 This policy is intentionally explicit: if the CI install path or verified upstream behavior changes, update this document, the workflows, and the affected tests together.
 
@@ -28,9 +31,10 @@ This policy is intentionally explicit: if the CI install path or verified upstre
 - `mypy src`
 - `pytest -m 'not integration'`
 - `python -m build`
+- `python tests/packaging/install_smoke.py`
 - `PI_RPC_REQUIRE_INTEGRATION=1 pytest -m integration`
 
-The integration job uses the bundled mock provider fixture by default, so external model credentials are not required for the required compatibility gate.
+The integration job uses the bundled mock provider fixture by default, so external model credentials are not required for the required compatibility gate. That required integration tier now includes the example smoke suite, the dataset-triage `AppTest` workflow, and the extension/retry/subscription contract tests.
 
 ### Optional live smoke tier
 
@@ -53,6 +57,7 @@ The following are still out of scope for the supported contract:
 
 - TUI-only extension APIs such as `ctx.ui.custom()` and direct terminal component hooks that are not represented in RPC
 - async-native Python APIs
+- undocumented example knobs beyond the shared `PI_RPC_EXAMPLE_*` runtime overrides used by the shipped example scripts
 - protocol behavior that is not exercised by the repository's tests
 
 ## Updating the policy

@@ -4,7 +4,12 @@ import queue
 from dataclasses import dataclass
 from pathlib import Path
 
-from pi_rpc import PiClient, PiClientOptions
+from pi_rpc import PiClient
+
+try:
+    from examples.runtime_config import build_example_client_options
+except ImportError:  # pragma: no cover - supports `python examples/review_gate_ui.py`
+    from runtime_config import build_example_client_options
 from pi_rpc.events import AgentEvent, ExtensionUiRequestEvent
 from pi_rpc.protocol_types import (
     ConfirmExtensionUiRequest,
@@ -102,7 +107,7 @@ def run_until_idle(
 
 def main() -> None:
     extension_path = Path(__file__).with_name("extensions") / "review_gate.ts"
-    options = PiClientOptions(no_session=True, extra_args=("-e", str(extension_path)))
+    options = build_example_client_options(no_session=True, extra_args=("-e", str(extension_path)))
 
     with PiClient(options) as client:
         commands = {command.name for command in client.get_commands()}
@@ -112,6 +117,7 @@ def main() -> None:
         subscription = client.subscribe_events(maxsize=200)
         client.prompt("/review-gate")
         run_until_idle(client, subscription)
+        print("[done/review_gate_ui]")
 
 
 if __name__ == "__main__":

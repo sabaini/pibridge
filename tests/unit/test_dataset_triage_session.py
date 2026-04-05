@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass, field
 
 import pytest
@@ -8,6 +9,8 @@ from pi_rpc import PiCommandError, PiProcessExitedError, PiProtocolError, PiSubs
 from pi_rpc.events import AgentEndEvent, MessageUpdateEvent, ToolExecutionStartEvent
 from pi_rpc.protocol_types import AssistantMessage, AssistantMessageEvent, TextContent, Usage, UsageCost
 from tests.example_support import load_dataset_triage_module
+
+runtime_config_module = importlib.import_module("runtime_config")
 
 session_module = load_dataset_triage_module("pi_session")
 
@@ -227,3 +230,36 @@ def test_export_session_html_wraps_pi_errors(error: BaseException) -> None:
 
     with pytest.raises(session_module.DatasetTriageSessionError, match="Pi request failed"):
         session.export_session_html("/tmp/requested.html")
+
+
+def test_session_uses_example_runtime_overrides_when_options_are_not_supplied(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(runtime_config_module.EXAMPLE_PROVIDER_ENV, "pi-rpc-mock")
+    monkeypatch.setenv(runtime_config_module.EXAMPLE_MODEL_ENV, "canned-responses")
+    monkeypatch.setenv(runtime_config_module.EXAMPLE_EXTRA_ARGS_ENV, "-e /tmp/mock-provider.ts")
+    monkeypatch.setenv(runtime_config_module.EXAMPLE_SESSION_DIR_ENV, "/tmp/test-sessions")
+
+    session = session_module.DatasetTriageSession(client_factory=lambda _options: None)
+
+    assert session._options.provider == "pi-rpc-mock"
+    assert session._options.model == "canned-responses"
+    assert session._options.session_dir == "/tmp/test-sessions"
+    assert session._options.extra_args == ("-e", "/tmp/mock-provider.ts")
+
+
+def test_session_surfaces_stream_terminal_errors_as_ui_safe_failures() -> None:
+    subscription = FakeSubscription(
+        [
+            make_text_delta("partial"),
+            make_agent_end("partial"),
+        ]
+    )
+    client = FakeClient(subscription=subscription)
+    session = build_session(client)
+
+    error_message = make_assistant_message("partial")
+    object.__setattr__(error_message, "stop_reason", "error")
+    object.__setattr__(error_message, "error_message", "mock failure")
+    subscription.events[-1] = AgentEndEvent(messages=(error_message,), type="agent_end")
+
+    with pytest.raises(session_module.DatasetTriageSessionError, match="mock failure"):
+        session.analyze_profile("Dataset summary")

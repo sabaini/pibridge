@@ -22,6 +22,7 @@ ruff check .
 mypy src
 pytest -m 'not integration'
 python -m build
+just install-smoke
 ```
 
 Run required integration coverage with a real `pi` binary installed:
@@ -29,6 +30,8 @@ Run required integration coverage with a real `pi` binary installed:
 ```bash
 PI_RPC_REQUIRE_INTEGRATION=1 pytest -m integration
 ```
+
+That required integration pass now covers the public API contract suite, the shipped example smoke tests, and the dataset-triage `AppTest` workflow.
 
 If you are validating a live backend for the smoke workflow contract, also run:
 
@@ -38,7 +41,9 @@ PI_RPC_PROVIDER=<provider> PI_RPC_MODEL=<model> PI_RPC_REQUIRE_INTEGRATION=1 pyt
 
 ## 3. Dataset-triage example walkthrough
 
-Run the example locally:
+Most dataset-triage behavior is now exercised automatically in `tests/integration/test_dataset_triage_app.py`, including upload seeding, initial analysis, follow-up, reset, and HTML export success/failure handling.
+
+Keep one lightweight manual sanity pass before release:
 
 ```bash
 just dataset-triage
@@ -46,14 +51,9 @@ just dataset-triage
 
 Verify the following manually:
 
-- [ ] bundled sample dataset loads successfully
-- [ ] changing delimiter / encoding / header options on the same file forces a reload
-- [ ] large synthetic CSVs show bounded-load warnings before Pi is called
-- [ ] prompt preview clearly states when profiling is based on a bounded first-N sample
-- [ ] initial analysis streams successfully
-- [ ] follow-up questions work through `continue_prompt()` in the same session
-- [ ] Markdown transcript download works
-- [ ] session HTML export works, or a friendly error is shown when export fails
+- [ ] bundled sample dataset still feels usable end-to-end in a real browser session
+- [ ] changing delimiter / encoding / header options on the same file still forces a reload
+- [ ] large synthetic CSVs still show bounded-load warnings before Pi is called
 - [ ] no-redaction warning is still present in the UI/docs
 
 ## 4. Documentation
@@ -77,5 +77,6 @@ Confirm these documents match the shipped behavior:
 ## 6. Packaging / release notes
 
 - [ ] inspect `dist/` artifacts from `python -m build`
-- [ ] summarize notable user-facing changes, including any compatibility-policy updates
+- [ ] confirm `just install-smoke` passed against the built wheel from a clean virtualenv/cwd
+- [ ] summarize notable user-facing changes, including any compatibility-policy updates and the shared `PI_RPC_EXAMPLE_*` runtime overrides
 - [ ] call out migrations such as the recommended use of `continue_prompt()` for immediate streamed follow-ups

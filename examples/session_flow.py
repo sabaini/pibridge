@@ -1,10 +1,16 @@
 from __future__ import annotations
 
-from pi_rpc import PiClient, PiClientOptions
+from pi_rpc import PiClient
+
+try:
+    from examples.runtime_config import DEFAULT_MODEL, DEFAULT_PROVIDER, build_example_client_options
+except ImportError:  # pragma: no cover - supports `python examples/session_flow.py`
+    from runtime_config import DEFAULT_MODEL, DEFAULT_PROVIDER, build_example_client_options
 
 
 def main() -> None:
-    with PiClient(PiClientOptions(provider="anthropic", model="claude-sonnet-4-20250514")) as client:
+    options = build_example_client_options(provider=DEFAULT_PROVIDER, model=DEFAULT_MODEL)
+    with PiClient(options) as client:
         state = client.get_state()
         print("Current session:", state.session_id)
 
@@ -17,6 +23,7 @@ def main() -> None:
 
         commands = client.get_commands()
         print("Available slash commands:", len(commands))
+        print("[done/session_flow]")
 
 
 if __name__ == "__main__":

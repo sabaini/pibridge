@@ -57,6 +57,12 @@ jobs:
       - name: Install pi CLI
         run: npm install -g @mariozechner/pi-coding-agent
 
+      - name: Build
+        run: python -m build
+
+      - name: Installed wheel smoke
+        run: python tests/packaging/install_smoke.py
+
       - name: Mock-backed integration tests
         env:
           PI_RPC_REQUIRE_INTEGRATION: '1'

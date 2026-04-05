@@ -13,6 +13,7 @@ It starts Pi lazily, communicates over strict JSONL on stdin/stdout, exposes typ
 - multiple event subscribers via bounded per-subscriber queues
 - idle-only subprocess restart when Pi dies between commands
 - integration tests against a real `pi --mode rpc` subprocess, with a bundled mock backend by default
+- smoke coverage for the shipped example scripts, the Streamlit dataset-triage app, and an installed wheel in a clean virtualenv
 
 ## Installation
 
@@ -228,6 +229,12 @@ just build
 
 Or run `just check` to execute lint, type checking, unit tests, and build validation together.
 
+Installed-artifact smoke is also available locally:
+
+```bash
+just install-smoke
+```
+
 Example tests that need `pandas` are skipped unless you also install `.[examples]`.
 
 ### Integration tests
@@ -248,6 +255,12 @@ just test-integration
 ```
 
 Or run `just check-all` to execute the standard checks plus integration tests.
+
+The required integration gate now includes:
+
+- public-API contract coverage for command dispatch, lifecycle, subscriptions, retries, and bash context behavior
+- end-to-end smoke runs for `examples/basic_prompt.py`, `examples/session_flow.py`, `examples/bash_then_prompt.py`, `examples/extension_ui.py`, and `examples/review_gate_ui.py`
+- a Streamlit `AppTest` smoke pass for `examples/dataset_triage/app.py`
 
 Set `PI_RPC_REQUIRE_INTEGRATION=1` when skips are unacceptable, such as CI jobs that are expected to install `pi` first. In that mode, the suite fails loudly instead of silently skipping when `pi` or the bundled mock fixture is unavailable.
 
@@ -271,11 +284,20 @@ If `pi` is not installed or the bundled mock fixture is missing, the integration
 - `examples/review_gate_ui.py` with `examples/extensions/review_gate.ts` - a realistic human-approval flow that exercises `select`, `confirm`, `input`, `editor`, `notify`, `setStatus`, `setWidget`, `setTitle`, and `set_editor_text`
 - `examples/dataset_triage/` - Streamlit CSV/CSV.gz triage assistant with parse hints, bounded first-N profiling, prompt/transcript download, session HTML export, and Pi follow-ups via `continue_prompt()` (`just dataset-triage` bootstraps `.venv` and installs `.[examples]`)
 
+All shipped examples honor the same optional runtime overrides, which lets the integration suite point them at the bundled mock backend without editing the scripts:
+
+- `PI_RPC_EXAMPLE_PROVIDER`
+- `PI_RPC_EXAMPLE_MODEL`
+- `PI_RPC_EXAMPLE_EXTRA_ARGS`
+- `PI_RPC_EXAMPLE_SESSION_DIR`
+
+For example, `PI_RPC_EXAMPLE_EXTRA_ARGS='-e /path/to/mock_provider.ts'` adds test-only extensions while keeping the script defaults intact.
+
 ## Compatibility and release workflow
 
 - compatibility policy: [`docs/compatibility-policy.md`](docs/compatibility-policy.md)
 - release checklist: [`docs/release-checklist.md`](docs/release-checklist.md)
-- GitHub Actions: `.github/workflows/ci.yml` runs lint, type checking, unit tests, build validation, and the mock-backed integration suite; `.github/workflows/compat-smoke.yml` is an opt-in live smoke workflow that runs `tests/integration/test_live_smoke.py` against one real provider/model pair
+- GitHub Actions: `.github/workflows/ci.yml` runs lint, type checking, unit tests, build validation, installed-wheel smoke, example smoke, dataset-triage app smoke, and the rest of the mock-backed integration suite; `.github/workflows/compat-smoke.yml` is an opt-in live smoke workflow that runs `tests/integration/test_live_smoke.py` against one real provider/model pair
 - current CI installs `pi` on Ubuntu runners with `npm install -g @mariozechner/pi-coding-agent`; if that upstream install path changes, update both the workflow and `docs/compatibility-policy.md`
 
 ## Current limits

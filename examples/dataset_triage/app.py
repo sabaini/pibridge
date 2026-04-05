@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from pathlib import Path
 from typing import Any
 
 import streamlit as st
@@ -14,6 +15,12 @@ try:
     from .profiler import build_dataset_profile
     from .prompts import build_initial_analysis_prompt
 except ImportError:  # pragma: no cover - supports `streamlit run examples/dataset_triage/app.py`
+    import sys
+
+    APP_DIR = Path(__file__).resolve().parent
+    if str(APP_DIR) not in sys.path:
+        sys.path.insert(0, str(APP_DIR))
+
     from export import build_export_basename, build_export_markdown
     from loader import load_csv
     from models import CsvLoadOptions, DatasetLoadError
@@ -44,10 +51,17 @@ def main() -> None:
         st.checkbox("First row contains column names", key="parse_has_header")
 
     uploaded_file = st.file_uploader("Upload a CSV or CSV.gz file", type=["csv", "gz"])
+    if uploaded_file is None:
+        uploaded_file = state.get("test_uploaded_file")
 
     left, right = st.columns((3, 2))
     with right:
-        if st.button("Reset conversation", disabled=state["loaded_dataset"] is None, use_container_width=True):
+        if st.button(
+            "Reset conversation",
+            disabled=state["loaded_dataset"] is None,
+            use_container_width=True,
+            key="reset_conversation_button",
+        ):
             _reset_conversation_state()
             state["session_needs_reset"] = True
             st.success("The next Pi request will start a fresh session for the current dataset.")
@@ -122,7 +136,7 @@ def main() -> None:
                 st.markdown(state["latest_stream_text"])
 
     analyze_disabled = state["analysis_running"]
-    if st.button("Analyze with Pi", disabled=analyze_disabled, type="primary", use_container_width=True):
+    if st.button("Analyze with Pi", disabled=analyze_disabled, type="primary", use_container_width=True, key="analyze_button"):
         assert analysis_prompt is not None
         state["conversation_history"].append({"role": "user", "text": "Analyze the uploaded dataset."})
         _run_streamed_request(
@@ -139,8 +153,12 @@ def main() -> None:
         st.info("Run **Analyze with Pi** first so follow-up questions stay grounded in the uploaded dataset.")
 
     with st.form("follow_up_form", clear_on_submit=True):
-        question = st.text_input("Ask a follow-up question", placeholder="Which three columns should I clean first?")
-        submitted = st.form_submit_button("Send", disabled=follow_up_disabled)
+        question = st.text_input(
+            "Ask a follow-up question",
+            placeholder="Which three columns should I clean first?",
+            key="follow_up_question",
+        )
+        submitted = st.form_submit_button("Send", disabled=follow_up_disabled, use_container_width=True)
     if submitted and question.strip():
         if not state["has_completed_initial_analysis"]:
             state["analysis_error"] = "Analyze the dataset with Pi before asking follow-up questions."
@@ -176,7 +194,12 @@ def main() -> None:
         )
 
     with html_col:
-        if st.button("Prepare session HTML export", disabled=export_disabled, use_container_width=True):
+        if st.button(
+            "Prepare session HTML export",
+            disabled=export_disabled,
+            use_container_width=True,
+            key="prepare_session_html_export_button",
+        ):
             _prepare_session_html_export(loaded_dataset.upload.name)
 
     if state["session_export_bytes"] is not None and state["session_export_name"] is not None:
@@ -263,6 +286,7 @@ def _run_streamed_request(
         _ensure_dataset_session(dataset_name)
         final_text = runner(on_update)
     except DatasetTriageSessionError as exc:
+        state["latest_stream_text"] = ""
         state["analysis_error"] = str(exc)
     else:
         if marks_initial_analysis_complete:
@@ -334,6 +358,7 @@ def _state() -> Any:
         "export_error": None,
         "session_export_bytes": None,
         "session_export_name": None,
+        "test_uploaded_file": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:

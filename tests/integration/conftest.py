@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 import os
 import queue
+import shlex
 import shutil
+import subprocess
+import sys
 import time
 from collections.abc import Iterator, Mapping
 from pathlib import Path
@@ -19,6 +22,12 @@ MOCK_MODEL_ID = "canned-responses"
 MOCK_API_KEY_ENV = "PI_RPC_MOCK_API_KEY"
 MOCK_PROMPT_MAP_ENV = "PI_RPC_MOCK_PROMPT_MAP"
 MOCK_CONTEXT_MAP_ENV = "PI_RPC_MOCK_CONTEXT_MAP"
+EXAMPLE_PROVIDER_ENV = "PI_RPC_EXAMPLE_PROVIDER"
+EXAMPLE_MODEL_ENV = "PI_RPC_EXAMPLE_MODEL"
+EXAMPLE_EXTRA_ARGS_ENV = "PI_RPC_EXAMPLE_EXTRA_ARGS"
+EXAMPLE_SESSION_DIR_ENV = "PI_RPC_EXAMPLE_SESSION_DIR"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SOURCE_ROOT = REPO_ROOT / "src"
 MOCK_EXTENSION_PATH = Path(__file__).resolve().parent / "fixtures" / "mock_provider.ts"
 RPC_UI_DEMO_EXTENSION_PATH = Path(__file__).resolve().parent / "fixtures" / "rpc_ui_demo.ts"
 DEFAULT_MOCK_PROMPT_MAP = {
@@ -334,3 +343,62 @@ def _prompt_and_get_text(client: PiClient, prompt: str, timeout: float = 120.0) 
     text = client.get_last_assistant_text(timeout=timeout)
     assert text is not None
     return text
+
+
+def _collect_events_until_agent_end(subscription: queue.Queue[AgentEvent], timeout: float = 120.0) -> list[AgentEvent]:
+    deadline = time.monotonic() + timeout
+    events: list[AgentEvent] = []
+    while time.monotonic() < deadline:
+        remaining = max(0.1, min(1.0, deadline - time.monotonic()))
+        event = subscription.get(timeout=remaining)
+        events.append(event)
+        if event.type == "agent_end":
+            return events
+    raise AssertionError(f"timed out waiting for agent_end after receiving {len(events)} events")
+
+
+def _example_runtime_env(
+    *,
+    workspace: Path,
+    prompt_map: Mapping[str, Any],
+    context_map: Mapping[str, Any],
+    extra_args: tuple[str, ...] = (),
+    provider: str = MOCK_PROVIDER_NAME,
+    model: str = MOCK_MODEL_ID,
+) -> dict[str, str]:
+    session_dir = workspace / "example-sessions"
+    session_dir.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ)
+    pythonpath_parts = [str(SOURCE_ROOT)]
+    existing_pythonpath = env.get("PYTHONPATH")
+    if existing_pythonpath:
+        pythonpath_parts.append(existing_pythonpath)
+    env.update(
+        {
+            "PYTHONPATH": os.pathsep.join(pythonpath_parts),
+            EXAMPLE_PROVIDER_ENV: provider,
+            EXAMPLE_MODEL_ENV: model,
+            EXAMPLE_EXTRA_ARGS_ENV: shlex.join(extra_args),
+            EXAMPLE_SESSION_DIR_ENV: str(session_dir),
+        }
+    )
+    env.update(_mock_env(prompt_map, context_map))
+    return env
+
+
+def _run_python_example(
+    script_path: Path,
+    *,
+    workspace: Path,
+    env: Mapping[str, str],
+    timeout: float = 120.0,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(script_path)],
+        cwd=workspace,
+        env=dict(env),
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )

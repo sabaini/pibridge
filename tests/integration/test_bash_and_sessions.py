@@ -20,6 +20,11 @@ def mock_context_map() -> dict[str, object]:
             ),
             mock_user_message("What output did the previous bash command produce? Reply with exactly that text."),
         ): "hello from pi-rpc-python",
+        mock_context_key(
+            mock_user_message(bash_execution_context_text("printf 'alpha'", "alpha")),
+            mock_user_message(bash_execution_context_text("printf 'beta'", "beta")),
+            mock_user_message("List the previous bash outputs in order, separated by commas."),
+        ): "alpha,beta",
     }
 
 
@@ -63,6 +68,16 @@ def test_abort_bash_returns_cancelled_result(mock_pi_client: PiClient) -> None:
     result = result_holder["result"]
     assert result.cancelled is True
     assert result.exit_code is None
+
+
+def test_multiple_bash_results_accumulate_into_the_next_prompt(mock_pi_client: PiClient) -> None:
+    first = mock_pi_client.bash("printf 'alpha'")
+    second = mock_pi_client.bash("printf 'beta'")
+
+    assert first.output == "alpha"
+    assert second.output == "beta"
+    assert _prompt_and_get_text(mock_pi_client, "List the previous bash outputs in order, separated by commas.") == "alpha,beta"
+
 
 
 def test_switch_session_get_messages_and_fork_flows(mock_pi_client: PiClient) -> None:

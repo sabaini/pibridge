@@ -4,6 +4,7 @@ import os
 import queue
 import re
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from pi_rpc import PiClient, PiClientOptions
@@ -15,6 +16,16 @@ from pi_rpc.exceptions import (
     PiSubscriptionOverflowError,
     PiTimeoutError,
 )
+
+try:
+    from runtime_config import build_example_client_options
+except ImportError:  # pragma: no cover - supports package-style imports in tests
+    import sys
+
+    EXAMPLES_DIR = Path(__file__).resolve().parents[1]
+    if str(EXAMPLES_DIR) not in sys.path:
+        sys.path.insert(0, str(EXAMPLES_DIR))
+    from runtime_config import build_example_client_options
 
 
 class DatasetTriageSessionError(RuntimeError):
@@ -30,7 +41,7 @@ class DatasetTriageSession:
         subscription_maxsize: int = 500,
         event_timeout: float = 60.0,
     ) -> None:
-        self._options = options or PiClientOptions()
+        self._options = options or build_example_client_options()
         self._client_factory = client_factory or (lambda options: PiClient(options))
         self._subscription_maxsize = subscription_maxsize
         self._event_timeout = event_timeout
@@ -118,6 +129,12 @@ class DatasetTriageSession:
                     on_update("".join(fragments))
                 continue
             if getattr(event, "type", None) == "agent_end":
+                final_message = getattr(event, "messages", ())[-1] if getattr(event, "messages", ()) else None
+                stop_reason = getattr(final_message, "stop_reason", None)
+                if stop_reason in {"error", "aborted"}:
+                    error_message = getattr(final_message, "error_message", None)
+                    detail = f": {error_message}" if error_message else ""
+                    raise DatasetTriageSessionError(f"Pi request failed while streaming a response{detail}")
                 break
 
         final_text = client.get_last_assistant_text() or "".join(fragments)
