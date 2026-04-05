@@ -13,7 +13,7 @@ The repository currently treats the following as the supported compatibility con
 - Required upstream behavior:
   - the full typed command/response/event surface covered by unit tests
   - the mock-backed integration suite in `tests/integration/`
-  - real-subprocess public-API contract checks for command dispatch, lifecycle, subscriptions, retries, and accumulated bash context
+  - real-subprocess public-API contract checks for command dispatch, lifecycle, subscriptions, auto-retry controls, and accumulated bash context
   - the recommended immediate streamed follow-up path exposed as `PiClient.continue_prompt()`
   - the RPC-safe extension UI request/response flow exercised by `tests/integration/test_extension_ui.py`
   - end-to-end smoke runs for the shipped `examples/*.py` scripts and the Streamlit dataset-triage app
@@ -34,7 +34,7 @@ This policy is intentionally explicit: if the CI install path or verified upstre
 - `python tests/packaging/install_smoke.py`
 - `PI_RPC_REQUIRE_INTEGRATION=1 pytest -m integration`
 
-The integration job uses the bundled mock provider fixture by default, so external model credentials are not required for the required compatibility gate. That required integration tier now includes the example smoke suite, the dataset-triage `AppTest` workflow, and the extension/retry/subscription contract tests.
+The integration job uses the bundled mock provider fixture by default, so external model credentials are not required for the required compatibility gate. That required integration tier now includes the example smoke suite, the dataset-triage `AppTest` workflow, and the extension/auto-retry-control/subscription contract tests.
 
 ### Optional live smoke tier
 

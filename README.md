@@ -258,7 +258,7 @@ Or run `just check-all` to execute the standard checks plus integration tests.
 
 The required integration gate now includes:
 
-- public-API contract coverage for command dispatch, lifecycle, subscriptions, retries, and bash context behavior
+- public-API contract coverage for command dispatch, lifecycle, subscriptions, auto-retry controls, and bash context behavior
 - end-to-end smoke runs for `examples/basic_prompt.py`, `examples/session_flow.py`, `examples/bash_then_prompt.py`, `examples/extension_ui.py`, and `examples/review_gate_ui.py`
 - a Streamlit `AppTest` smoke pass for `examples/dataset_triage/app.py`
 

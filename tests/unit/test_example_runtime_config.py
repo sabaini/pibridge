@@ -80,3 +80,28 @@ def test_build_example_client_options_preserves_defaults_without_env() -> None:
     assert options.model == runtime_config.DEFAULT_MODEL
     assert options.session_dir == "/tmp/default-sessions"
     assert options.extra_args == ("-e", "/tmp/default-extension.ts")
+
+
+def test_explicit_empty_env_ignores_ambient_example_overrides(monkeypatch) -> None:
+    monkeypatch.setenv(runtime_config.EXAMPLE_PROVIDER_ENV, "ambient-provider")
+    monkeypatch.setenv(runtime_config.EXAMPLE_MODEL_ENV, "ambient-model")
+    monkeypatch.setenv(runtime_config.EXAMPLE_EXTRA_ARGS_ENV, "--ambient")
+    monkeypatch.setenv(runtime_config.EXAMPLE_SESSION_DIR_ENV, "/tmp/ambient-sessions")
+
+    config = runtime_config.get_example_runtime_config({})
+    options = runtime_config.build_example_client_options(
+        provider=runtime_config.DEFAULT_PROVIDER,
+        model=runtime_config.DEFAULT_MODEL,
+        session_dir="/tmp/default-sessions",
+        extra_args=("-e", "/tmp/default-extension.ts"),
+        env={},
+    )
+
+    assert config.provider is None
+    assert config.model is None
+    assert config.extra_args == ()
+    assert config.session_dir is None
+    assert options.provider == runtime_config.DEFAULT_PROVIDER
+    assert options.model == runtime_config.DEFAULT_MODEL
+    assert options.session_dir == "/tmp/default-sessions"
+    assert options.extra_args == ("-e", "/tmp/default-extension.ts")

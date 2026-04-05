@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import textwrap
 import venv
+from collections.abc import Iterable
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -91,14 +92,19 @@ def _python_in_venv(venv_dir: Path) -> Path:
 
 
 
-def main() -> None:
-    wheels = sorted(DIST_DIR.glob("*.whl"))
-    if not wheels:
+def select_built_wheel(wheels: Iterable[Path]) -> Path:
+    candidates = list(wheels)
+    if not candidates:
         raise SystemExit(f"No wheel found in {DIST_DIR}; run `python -m build` first.")
+    return max(candidates, key=lambda wheel: (wheel.stat().st_mtime_ns, wheel.name))
+
+
+
+def main() -> None:
     if not MOCK_EXTENSION_PATH.exists():
         raise SystemExit(f"Mock provider fixture not found: {MOCK_EXTENSION_PATH}")
 
-    wheel = wheels[-1]
+    wheel = select_built_wheel(DIST_DIR.glob("*.whl"))
     with tempfile.TemporaryDirectory(prefix="pi-rpc-install-smoke-") as temp_root:
         temp_path = Path(temp_root)
         venv_dir = temp_path / "venv"

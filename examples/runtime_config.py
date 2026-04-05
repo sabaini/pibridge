@@ -40,7 +40,7 @@ def parse_example_extra_args(raw_value: str | None) -> tuple[str, ...]:
 
 
 def get_example_runtime_config(env: Mapping[str, str] | None = None) -> ExampleRuntimeConfig:
-    source = env or os.environ
+    source = os.environ if env is None else env
     return ExampleRuntimeConfig(
         provider=_optional_env_value(source, EXAMPLE_PROVIDER_ENV),
         model=_optional_env_value(source, EXAMPLE_MODEL_ENV),
