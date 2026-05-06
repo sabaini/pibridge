@@ -14,8 +14,8 @@ from typing import Any
 
 import pytest
 
-from pi_rpc import PiClient, PiClientOptions
-from pi_rpc.events import AgentEvent
+from pibridge import PiClient, PiClientOptions
+from pibridge.events import AgentEvent
 
 MOCK_PROVIDER_NAME = "pi-rpc-mock"
 MOCK_MODEL_ID = "canned-responses"

@@ -4,8 +4,8 @@ import importlib.util
 import pathlib
 import sys
 
-from pi_rpc.events import AgentEndEvent, ExtensionUiRequestEvent
-from pi_rpc.protocol_types import (
+from pibridge.events import AgentEndEvent, ExtensionUiRequestEvent
+from pibridge.protocol_types import (
     ConfirmExtensionUiRequest,
     EditorExtensionUiRequest,
     InputExtensionUiRequest,

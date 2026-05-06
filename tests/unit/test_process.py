@@ -10,13 +10,13 @@ from typing import Any
 
 import pytest
 
-from pi_rpc.commands import make_command
-from pi_rpc.events import AgentStartEvent, ExtensionUiRequestEvent
-from pi_rpc.exceptions import PiCommandError, PiProcessExitedError, PiProtocolError, PiStartupError, PiSubscriptionOverflowError, PiTimeoutError
-from pi_rpc.jsonl import JsonlReader, serialize_json_line
-from pi_rpc.models import PiClientOptions
-from pi_rpc.process import PiProcess
-from pi_rpc.protocol_types import ConfirmExtensionUiRequest, NotifyExtensionUiRequest
+from pibridge.commands import make_command
+from pibridge.events import AgentStartEvent, ExtensionUiRequestEvent
+from pibridge.exceptions import PiCommandError, PiProcessExitedError, PiProtocolError, PiStartupError, PiSubscriptionOverflowError, PiTimeoutError
+from pibridge.jsonl import JsonlReader, serialize_json_line
+from pibridge.models import PiClientOptions
+from pibridge.process import PiProcess
+from pibridge.protocol_types import ConfirmExtensionUiRequest, NotifyExtensionUiRequest
 
 
 class FakeReadable:

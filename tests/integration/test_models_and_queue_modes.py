@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from pi_rpc import PiClient
+from pibridge import PiClient
 from tests.integration.conftest import MOCK_MODEL_ID, MOCK_PROVIDER_NAME, _wait_for_agent_end, _wait_for_event
 
 pytestmark = pytest.mark.integration

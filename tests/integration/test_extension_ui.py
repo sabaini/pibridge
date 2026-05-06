@@ -6,10 +6,10 @@ from typing import cast
 
 import pytest
 
-from pi_rpc import PiClient
-from pi_rpc.events import AgentEvent, ExtensionUiRequestEvent
-from pi_rpc.models import SessionTransitionResult
-from pi_rpc.protocol_types import (
+from pibridge import PiClient
+from pibridge.events import AgentEvent, ExtensionUiRequestEvent
+from pibridge.models import SessionTransitionResult
+from pibridge.protocol_types import (
     ConfirmExtensionUiRequest,
     EditorExtensionUiRequest,
     InputExtensionUiRequest,
@@ -20,7 +20,7 @@ from pi_rpc.protocol_types import (
     SetTitleExtensionUiRequest,
     SetWidgetExtensionUiRequest,
 )
-from pi_rpc.subscriptions import EventSubscription
+from pibridge.subscriptions import EventSubscription
 
 pytestmark = pytest.mark.integration
 

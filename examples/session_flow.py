@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pi_rpc import PiClient
+from pibridge import PiClient
 
 try:
     from examples.runtime_config import DEFAULT_MODEL, DEFAULT_PROVIDER, build_example_client_options
@@ -17,7 +17,7 @@ def main() -> None:
         transition = client.new_session()
         print("New session cancelled:", transition.cancelled)
 
-        client.set_session_name("pi-rpc-python-demo")
+        client.set_session_name("pibridge-demo")
         updated = client.get_state()
         print("Updated session name:", updated.session_name)
 

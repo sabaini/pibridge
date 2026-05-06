@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from pi_rpc.commands import RpcCommand, serialize_command
-from pi_rpc.events import AutoCompactionEndEvent, AutoCompactionStartEvent, ExtensionUiRequestEvent, MessageUpdateEvent, QueueUpdateEvent, parse_event
-from pi_rpc.exceptions import PiCommandError, PiProtocolError
-from pi_rpc.protocol_types import (
+from pibridge.commands import RpcCommand, serialize_command
+from pibridge.events import AutoCompactionEndEvent, AutoCompactionStartEvent, ExtensionUiRequestEvent, MessageUpdateEvent, QueueUpdateEvent, SessionInfoChangedEvent, ThinkingLevelChangedEvent, parse_event
+from pibridge.exceptions import PiCommandError, PiProtocolError
+from pibridge.protocol_types import (
     AssistantMessage,
     BashExecutionMessage,
     BranchSummaryMessage,
@@ -30,7 +30,7 @@ from pi_rpc.protocol_types import (
     serialize_agent_message,
     serialize_extension_ui_response,
 )
-from pi_rpc.responses import parse_response
+from pibridge.responses import parse_response
 
 MODEL = {
     "id": "claude-sonnet-4-20250514",
@@ -192,6 +192,20 @@ def test_parse_event_accepts_compaction_end_aliases(payload: dict[str, object], 
     assert event.result is not None
     assert event.result.summary == "Summary"
     assert event.type == expected_type
+
+
+def test_parse_event_accepts_session_metadata_events() -> None:
+    session_event = parse_event({"type": "session_info_changed", "name": "Dataset triage"})
+    assert isinstance(session_event, SessionInfoChangedEvent)
+    assert session_event.name == "Dataset triage"
+
+    unnamed_session_event = parse_event({"type": "session_info_changed"})
+    assert isinstance(unnamed_session_event, SessionInfoChangedEvent)
+    assert unnamed_session_event.name is None
+
+    thinking_event = parse_event({"type": "thinking_level_changed", "level": "medium"})
+    assert isinstance(thinking_event, ThinkingLevelChangedEvent)
+    assert thinking_event.level == "medium"
 
 
 def test_parse_event_streaming_message_update_variant() -> None:

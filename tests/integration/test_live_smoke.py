@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from pi_rpc import PiClient
+from pibridge import PiClient
 from tests.integration.conftest import MOCK_MODEL_ID, MOCK_PROVIDER_NAME, _live_override_enabled, _wait_for_agent_end
 
 pytestmark = pytest.mark.integration

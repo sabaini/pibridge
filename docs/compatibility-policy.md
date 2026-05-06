@@ -2,7 +2,7 @@
 
 ## Summary
 
-`pi-rpc-python` does not rely on a version-negotiation handshake. Compatibility is defined by the repository's automated checks and the behavior they exercise against the upstream `pi --mode rpc` CLI.
+`pibridge` does not rely on a version-negotiation handshake. Compatibility is defined by the repository's automated checks and the behavior they exercise against the upstream `pi --mode rpc` CLI.
 
 ## Supported contract
 

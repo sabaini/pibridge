@@ -7,8 +7,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from pi_rpc import PiClient, PiClientOptions
-from pi_rpc.exceptions import (
+from pibridge import PiClient, PiClientOptions
+from pibridge.exceptions import (
     PiCommandError,
     PiProcessExitedError,
     PiProtocolError,

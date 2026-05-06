@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from pi_rpc.jsonl import JsonlReader, serialize_json_line
+from pibridge.jsonl import JsonlReader, serialize_json_line
 
 
 def test_jsonl_reader_accepts_crlf_and_partial_chunks() -> None:

@@ -9,10 +9,12 @@ from .protocol_types import (
     AgentMessage,
     AssistantMessageEvent,
     ExtensionUiRequest,
+    ThinkingLevel,
     ToolExecutionResult,
     parse_agent_message,
     parse_assistant_message_event,
     parse_extension_ui_request,
+    parse_thinking_level_value,
     parse_tool_execution_result,
 )
 
@@ -133,6 +135,18 @@ class QueueUpdateEvent:
 
 
 @dataclass(frozen=True)
+class SessionInfoChangedEvent:
+    name: str | None
+    type: str = "session_info_changed"
+
+
+@dataclass(frozen=True)
+class ThinkingLevelChangedEvent:
+    level: ThinkingLevel
+    type: str = "thinking_level_changed"
+
+
+@dataclass(frozen=True)
 class ExtensionUiRequestEvent:
     request: ExtensionUiRequest
     type: str = "extension_ui_request"
@@ -155,6 +169,8 @@ AgentEvent = (
     | AutoRetryEndEvent
     | ExtensionErrorEvent
     | QueueUpdateEvent
+    | SessionInfoChangedEvent
+    | ThinkingLevelChangedEvent
     | ExtensionUiRequestEvent
 )
 
@@ -269,6 +285,10 @@ def parse_event(payload: Any) -> AgentEvent:
             steering=_require_str_list(payload, "steering"),
             follow_up=_require_str_list(payload, "followUp"),
         )
+    if event_type == "session_info_changed":
+        return SessionInfoChangedEvent(name=_optional_str(payload, "name"))
+    if event_type == "thinking_level_changed":
+        return ThinkingLevelChangedEvent(level=parse_thinking_level_value(payload.get("level"), "thinking_level_changed.level"))
     if event_type == "extension_ui_request":
         return ExtensionUiRequestEvent(request=parse_extension_ui_request(payload))
     raise PiProtocolError(f"Unsupported event type: {event_type!r}")
@@ -285,6 +305,15 @@ def _require_int(payload: dict[str, Any], key: str) -> int:
     value = payload.get(key)
     if not isinstance(value, int) or isinstance(value, bool):
         raise PiProtocolError(f"Expected '{key}' to be an integer")
+    return value
+
+
+def _optional_str(payload: dict[str, Any], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise PiProtocolError(f"Expected '{key}' to be a string when present")
     return value
 
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import queue
 
-from pi_rpc import PiClient
+from pibridge import PiClient
 
 try:
     from examples.runtime_config import DEFAULT_MODEL, DEFAULT_PROVIDER, build_example_client_options

@@ -5,10 +5,10 @@ from typing import Any
 
 import pytest
 
-from pi_rpc.commands import make_command
-from pi_rpc.exceptions import PiProcessExitedError, PiProtocolError
-from pi_rpc.models import PiClientOptions
-from pi_rpc.process import PiProcess
+from pibridge.commands import make_command
+from pibridge.exceptions import PiProcessExitedError, PiProtocolError
+from pibridge.models import PiClientOptions
+from pibridge.process import PiProcess
 from tests.unit.test_process import FakeChildProcess
 
 

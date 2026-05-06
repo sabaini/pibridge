@@ -1,8 +1,8 @@
-# Design doc: `pi-rpc-python`
+# Design doc: `pibridge`
 
 ## 1. Summary
 
-`pi-rpc-python` is a standalone Python binding for the existing Pi RPC protocol. It starts `pi --mode rpc` as a subprocess, communicates over stdin/stdout using strict JSONL, exposes a protocol-faithful Python API, and keeps the subprocess warm to amortize startup cost. Pi RPC is explicitly meant for embedding the coding agent in other applications, with commands sent on stdin, responses and events streamed on stdout, and optional command `id` values used for response correlation. ([GitHub][1])
+`pibridge` is a standalone Python binding for the existing Pi RPC protocol. It starts `pi --mode rpc` as a subprocess, communicates over stdin/stdout using strict JSONL, exposes a protocol-faithful Python API, and keeps the subprocess warm to amortize startup cost. Pi RPC is explicitly meant for embedding the coding agent in other applications, with commands sent on stdin, responses and events streamed on stdout, and optional command `id` values used for response correlation. ([GitHub][1])
 
 This package is a **full protocol wrapper**, not a minimal prompt-only shim.
 
@@ -70,7 +70,7 @@ Still deferred:
 
 ## 6. Process model
 
-`pi-rpc-python` will manage a local Pi subprocess started as:
+`pibridge` will manage a local Pi subprocess started as:
 
 ```bash
 pi --mode rpc [options]
@@ -340,10 +340,10 @@ See also `docs/compatibility-policy.md` and `docs/release-checklist.md`.
 ## 18. Proposed package layout
 
 ```text
-pi-rpc-python/
+pibridge/
   pyproject.toml
   src/
-    pi_rpc/
+    pibridge/
       __init__.py
       client.py
       process.py

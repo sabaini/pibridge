@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from pi_rpc.exceptions import PiProtocolError, PiSubscriptionOverflowError
-from pi_rpc.subscriptions import EventSubscription, SubscriptionHub
+from pibridge.exceptions import PiProtocolError, PiSubscriptionOverflowError
+from pibridge.subscriptions import EventSubscription, SubscriptionHub
 
 
 def assert_blocking_get_raises(

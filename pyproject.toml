@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pi-rpc-python"
+name = "pibridge"
 version = "0.1.0"
 description = "Protocol-faithful Python wrapper for Pi RPC mode"
 readme = "README.md"
@@ -49,4 +49,4 @@ select = ["E", "F", "I", "B", "UP"]
 python_version = "3.11"
 strict = true
 mypy_path = "src"
-packages = ["pi_rpc"]
+packages = ["pibridge"]

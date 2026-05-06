@@ -2,20 +2,20 @@ from __future__ import annotations
 
 import queue
 
-from pi_rpc import PiClient
+from pibridge import PiClient
 
 try:
     from examples.runtime_config import build_example_client_options
 except ImportError:  # pragma: no cover - supports `python examples/extension_ui.py`
     from runtime_config import build_example_client_options
-from pi_rpc.events import AgentEvent, ExtensionUiRequestEvent
-from pi_rpc.protocol_types import (
+from pibridge.events import AgentEvent, ExtensionUiRequestEvent
+from pibridge.protocol_types import (
     ConfirmExtensionUiRequest,
     EditorExtensionUiRequest,
     InputExtensionUiRequest,
     SelectExtensionUiRequest,
 )
-from pi_rpc.subscriptions import EventSubscription
+from pibridge.subscriptions import EventSubscription
 
 
 def handle_event(client: PiClient, event: AgentEvent) -> bool:

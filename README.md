@@ -1,6 +1,6 @@
-# pi-rpc-python
+# pibridge
 
-`pi-rpc-python` is a protocol-faithful Python wrapper for `pi --mode rpc`.
+`pibridge` is a protocol-faithful Python wrapper for `pi --mode rpc`.
 
 It starts Pi lazily, communicates over strict JSONL on stdin/stdout, exposes typed commands/responses/events, and supports bounded, queue-like event subscriptions.
 
@@ -18,14 +18,14 @@ It starts Pi lazily, communicates over strict JSONL on stdin/stdout, exposes typ
 ## Installation
 
 ```bash
-python -m venv .venv
-. .venv/bin/activate
-uv pip install -e .[dev]
+pip install pibridge
 ```
 
-Or, with pip available:
+For local development:
 
 ```bash
+python -m venv .venv
+. .venv/bin/activate
 pip install -e .[dev]
 ```
 
@@ -34,7 +34,7 @@ Example-only dependencies such as `pandas` and `streamlit` live in the `examples
 ## Quick start
 
 ```python
-from pi_rpc import PiClient, PiClientOptions
+from pibridge import PiClient, PiClientOptions
 
 options = PiClientOptions(provider="anthropic", model="claude-sonnet-4-20250514")
 
@@ -55,7 +55,7 @@ See `examples/` for more runnable samples, including the Streamlit dataset triag
 ### Construction and lifecycle
 
 ```python
-from pi_rpc import PiClient, PiClientOptions
+from pibridge import PiClient, PiClientOptions
 
 client = PiClient(
     PiClientOptions(
@@ -113,12 +113,12 @@ The public client mirrors Pi's documented RPC surface:
 
 Notable argument details:
 
-- `prompt()`, `steer()`, `follow_up()`, and `continue_prompt()` accept optional image content blocks (see `pi_rpc.protocol_types.ImageContent`)
+- `prompt()`, `steer()`, `follow_up()`, and `continue_prompt()` accept optional image content blocks (see `pibridge.protocol_types.ImageContent`)
 - `prompt()` also accepts `streaming_behavior="steer" | "followUp"`
 - `continue_prompt()` is the recommended immediate streamed follow-up helper; it sends `prompt(..., streaming_behavior="followUp")` while keeping the protocol-faithful low-level `follow_up()` and `steer()` methods available unchanged
 - in the current verified compatibility suite, raw `follow_up()` and `steer()` currently queue pending work in session state instead of starting a fresh streamed turn on their own
 - every high-level command accepts an optional per-call `timeout=` override
-- `send_command()` accepts either an explicit `pi_rpc.commands.RpcCommand` or a raw command name plus fields
+- `send_command()` accepts either an explicit `pibridge.commands.RpcCommand` or a raw command name plus fields
 
 ### Event subscriptions
 
@@ -148,7 +148,7 @@ RPC mode uses strict JSONL semantics:
 - an optional trailing `\r` is accepted on input
 - embedded `U+2028` and `U+2029` inside JSON strings are valid and must not split records
 
-`pi-rpc-python` uses a byte-oriented reader/writer instead of generic text line readers.
+`pibridge` uses a byte-oriented reader/writer instead of generic text line readers.
 
 ## Bash semantics
 
@@ -164,7 +164,7 @@ The stored bash execution message does not emit its own event.
 
 ## Extension UI support
 
-`pi-rpc-python` supports the RPC-safe extension UI sub-protocol documented by Pi.
+`pibridge` supports the RPC-safe extension UI sub-protocol documented by Pi.
 
 Supported request methods published through `subscribe_events()` as `ExtensionUiRequestEvent` values:
 
@@ -182,9 +182,9 @@ Example:
 ```python
 import queue
 
-from pi_rpc import PiClient
-from pi_rpc.events import ExtensionUiRequestEvent
-from pi_rpc.protocol_types import ConfirmExtensionUiRequest, SelectExtensionUiRequest
+from pibridge import PiClient
+from pibridge.events import ExtensionUiRequestEvent
+from pibridge.protocol_types import ConfirmExtensionUiRequest, SelectExtensionUiRequest
 
 with PiClient() as client:
     subscription = client.subscribe_events(maxsize=200)

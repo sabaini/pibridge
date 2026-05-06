@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from pi_rpc import PiClient
+from pibridge import PiClient
 from tests.example_support import load_dataset_triage_module
 from tests.integration.conftest import mock_assistant_message, mock_context_key, mock_user_message
 

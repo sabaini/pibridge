@@ -4,6 +4,7 @@ import io
 import json
 import subprocess
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -104,10 +105,12 @@ class PiProcess:
         self._active_workflow = False
         self._pending_workflow_start_id: str | None = None
         self._pending_extension_ui_request_ids: set[str] = set()
+        self._detached_prompt_request_ids: set[str] = set()
         self._idle_timer: threading.Timer | None = None
         self._stream_failure: BaseException | None = None
         self._restartable_idle_failure = False
         self._process_generation = 0
+        self._extension_ui_event_sequence = 0
         self._startup_pending: _PendingRequest | None = None
         self._startup_ready_generation = 0
 
@@ -142,6 +145,7 @@ class PiProcess:
             self._closed = True
             self._pending_workflow_start_id = None
             self._pending_extension_ui_request_ids.clear()
+            self._detached_prompt_request_ids.clear()
             self._active_workflow = False
         self._cancel_idle_timer()
         self._stop_process(graceful=True)
@@ -174,7 +178,17 @@ class PiProcess:
                         raise
                     break
             self._await_startup_probe(startup_pending)
-        response = self._wait_for_pending_request(pending, timeout=timeout, timeout_error=PiTimeoutError(command.type, timeout, command.id))
+        early_returned_for_extension_ui = False
+        if command.type == "prompt":
+            response = self._wait_for_prompt_response_or_extension_ui(pending, timeout=timeout)
+            early_returned_for_extension_ui = response is None
+            if response is None:
+                with self._lock:
+                    if command.id is not None:
+                        self._detached_prompt_request_ids.add(command.id)
+                response = RpcResponse(command=command.type, success=True, request_id=command.id)
+        else:
+            response = self._wait_for_pending_request(pending, timeout=timeout, timeout_error=PiTimeoutError(command.type, timeout, command.id))
         try:
             response.raise_for_error()
         except BaseException:
@@ -184,8 +198,9 @@ class PiProcess:
                         self._pending_workflow_start_id = None
                         self._schedule_idle_timer_locked()
             raise
-        with self._lock:
-            self._schedule_idle_timer_locked()
+        if not early_returned_for_extension_ui:
+            with self._lock:
+                self._schedule_idle_timer_locked()
         return response
 
     def _send_extension_ui_response(self, payload: dict[str, Any]) -> None:
@@ -268,6 +283,25 @@ class PiProcess:
         assert pending.response is not None
         return pending.response
 
+    def _wait_for_prompt_response_or_extension_ui(self, pending: _PendingRequest, *, timeout: float) -> RpcResponse[Any] | None:
+        command_id = pending.command.id or ""
+        deadline = time.monotonic() + timeout
+        with self._lock:
+            start_extension_ui_sequence = self._extension_ui_event_sequence
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                self._pending.abandon(command_id)
+                raise PiTimeoutError(pending.command.type, timeout, pending.command.id)
+            if pending.ready.wait(min(0.05, remaining)):
+                if pending.error is not None:
+                    raise pending.error
+                assert pending.response is not None
+                return pending.response
+            with self._lock:
+                if self._extension_ui_event_sequence > start_extension_ui_sequence:
+                    return None
+
     def _build_argv(self) -> list[str]:
         argv = [self._options.executable, "--mode", "rpc"]
         if self._options.provider:
@@ -287,6 +321,7 @@ class PiProcess:
         self._restartable_idle_failure = False
         self._pending_workflow_start_id = None
         self._pending_extension_ui_request_ids.clear()
+        self._detached_prompt_request_ids.clear()
         self._startup_pending = None
         self._startup_ready_generation = 0
         self._pending.clear_abandoned()
@@ -388,6 +423,11 @@ class PiProcess:
                     self._pending_workflow_start_id = None
                     self._schedule_idle_timer_locked()
             fulfillment = self._pending.fulfill(response.request_id, response)
+            with self._lock:
+                detached_prompt_completed = response.request_id in self._detached_prompt_request_ids
+                if detached_prompt_completed:
+                    self._detached_prompt_request_ids.remove(response.request_id)
+                    self._schedule_idle_timer_locked()
             if fulfillment == "abandoned":
                 return
             if fulfillment == "missing":
@@ -405,6 +445,7 @@ class PiProcess:
                 self._active_workflow = False
                 self._schedule_idle_timer_locked()
             elif isinstance(event, ExtensionUiRequestEvent):
+                self._extension_ui_event_sequence += 1
                 self._pending_workflow_start_id = None
                 if event.request.method in {"select", "confirm", "input", "editor"}:
                     self._pending_extension_ui_request_ids.add(event.request.id)
@@ -430,6 +471,7 @@ class PiProcess:
             self._restartable_idle_failure = not active and isinstance(error, PiProcessExitedError)
             self._pending_workflow_start_id = None
             self._pending_extension_ui_request_ids.clear()
+            self._detached_prompt_request_ids.clear()
             self._active_workflow = False
         self._pending.fail_all(error)
         if active:

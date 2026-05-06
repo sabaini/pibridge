@@ -4,8 +4,8 @@ import queue
 
 import pytest
 
-from pi_rpc import PiClient
-from pi_rpc.events import QueueUpdateEvent
+from pibridge import PiClient
+from pibridge.events import QueueUpdateEvent
 from tests.integration.conftest import _prompt_and_get_text, _wait_for_agent_end, _wait_for_event, mock_assistant_message, mock_context_key, mock_user_message
 
 pytestmark = pytest.mark.integration

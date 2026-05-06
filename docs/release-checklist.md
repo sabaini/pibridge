@@ -61,7 +61,7 @@ Verify the following manually:
 Confirm these documents match the shipped behavior:
 
 - [ ] `README.md`
-- [ ] `docs/pi-rpc-python.md`
+- [ ] `docs/pibridge.md`
 - [ ] `docs/compatibility-policy.md`
 - [ ] `docs/release-checklist.md`
 - [ ] `docs/dataset-triage-assistant.md`

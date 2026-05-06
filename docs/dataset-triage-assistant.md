@@ -7,7 +7,7 @@ Dataset Triage Assistant is a small local Python application that helps a user i
 The app uses:
 
 - `pandas` for deterministic dataset inspection and profiling
-- `pi-rpc-python` ("pibridge" in this document) for conversational analysis and streamed explanations
+- `pibridge` for conversational analysis and streamed explanations
 - `streamlit` for a lightweight local UI
 
 The core design principle is:
@@ -423,7 +423,7 @@ class DatasetTriageSession:
         ...
 ```
 
-### Relevant `pi-rpc-python` APIs
+### Relevant `pibridge` APIs
 
 The implementation will primarily use:
 
