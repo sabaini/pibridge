@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -10,7 +10,23 @@ readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Pi Bridge" }]
 license = "MIT"
+license-files = ["LICENSE"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/sabaini/pibridge"
+Repository = "https://github.com/sabaini/pibridge"
+Issues = "https://github.com/sabaini/pibridge/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -27,6 +43,9 @@ examples = [
 
 [tool.setuptools]
 package-dir = { "" = "src" }
+
+[tool.setuptools.package-data]
+pibridge = ["py.typed"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

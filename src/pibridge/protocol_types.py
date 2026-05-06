@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, TypeAlias, TypeVar, cast
+from typing import Any, Literal, TypeAlias, TypeGuard, TypeVar
 
 from .exceptions import PiProtocolError
 
@@ -348,13 +348,17 @@ def _expect_type(value: Any, expected: type, field_name: str) -> Any:
     return value
 
 
+def _is_literal_value(value: Any, allowed: tuple[_LiteralString, ...]) -> TypeGuard[_LiteralString]:
+    return isinstance(value, str) and value in allowed
+
+
 def _require_literal_value(value: Any, allowed: tuple[_LiteralString, ...], field_name: str) -> _LiteralString:
     if not isinstance(value, str):
         raise PiProtocolError(f"Expected {field_name} to be a string")
-    if value not in allowed:
+    if not _is_literal_value(value, allowed):
         allowed_values = ", ".join(repr(item) for item in allowed)
         raise PiProtocolError(f"Unsupported {field_name}: {value!r}; expected one of {allowed_values}")
-    return cast(_LiteralString, value)
+    return value
 
 
 def _require_mapping(payload: Any, label: str = "payload") -> dict[str, Any]:

@@ -2,6 +2,8 @@
 
 `pibridge` is a protocol-faithful Python wrapper for `pi --mode rpc`.
 
+Homepage and source: <https://github.com/sabaini/pibridge>
+
 It starts Pi lazily, communicates over strict JSONL on stdin/stdout, exposes typed commands/responses/events, and supports bounded, queue-like event subscriptions.
 
 ## Features
@@ -20,6 +22,8 @@ It starts Pi lazily, communicates over strict JSONL on stdin/stdout, exposes typ
 ```bash
 pip install pibridge
 ```
+
+Requires Python 3.11 or newer.
 
 For local development:
 
