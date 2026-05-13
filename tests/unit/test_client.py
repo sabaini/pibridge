@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from pibridge.client import PiClient
-from pibridge.commands import RpcCommand
-from pibridge.models import BashResult, LastAssistantTextResult, SessionTransitionResult
-from pibridge.protocol_types import ImageContent, ModelInfo, UsageCost
-from pibridge.responses import RpcResponse
+from picable.client import PiClient
+from picable.commands import RpcCommand
+from picable.models import BashResult, LastAssistantTextResult, SessionTransitionResult
+from picable.protocol_types import ImageContent, ModelInfo, UsageCost
+from picable.responses import RpcResponse
 
 
 @dataclass

@@ -4,14 +4,14 @@ import queue
 from dataclasses import dataclass
 from pathlib import Path
 
-from pibridge import PiClient
+from picable import PiClient
 
 try:
     from examples.runtime_config import build_example_client_options
 except ImportError:  # pragma: no cover - supports `python examples/review_gate_ui.py`
     from runtime_config import build_example_client_options
-from pibridge.events import AgentEvent, ExtensionUiRequestEvent
-from pibridge.protocol_types import (
+from picable.events import AgentEvent, ExtensionUiRequestEvent
+from picable.protocol_types import (
     ConfirmExtensionUiRequest,
     EditorExtensionUiRequest,
     InputExtensionUiRequest,
@@ -22,7 +22,7 @@ from pibridge.protocol_types import (
     SetTitleExtensionUiRequest,
     SetWidgetExtensionUiRequest,
 )
-from pibridge.subscriptions import EventSubscription
+from picable.subscriptions import EventSubscription
 
 
 @dataclass(frozen=True)

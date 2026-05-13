@@ -3,7 +3,7 @@ requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pibridge"
+name = "picable"
 version = "0.1.0"
 description = "Protocol-faithful Python wrapper for Pi RPC mode"
 readme = "README.md"
@@ -24,9 +24,9 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/sabaini/pibridge"
-Repository = "https://github.com/sabaini/pibridge"
-Issues = "https://github.com/sabaini/pibridge/issues"
+Homepage = "https://github.com/sabaini/picable"
+Repository = "https://github.com/sabaini/picable"
+Issues = "https://github.com/sabaini/picable/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -45,7 +45,7 @@ examples = [
 package-dir = { "" = "src" }
 
 [tool.setuptools.package-data]
-pibridge = ["py.typed"]
+picable = ["py.typed"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -68,4 +68,4 @@ select = ["E", "F", "I", "B", "UP"]
 python_version = "3.11"
 strict = true
 mypy_path = "src"
-packages = ["pibridge"]
+packages = ["picable"]

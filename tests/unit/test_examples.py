@@ -4,8 +4,8 @@ import importlib.util
 import pathlib
 import sys
 
-from pibridge.events import AgentEndEvent, ExtensionUiRequestEvent
-from pibridge.protocol_types import (
+from picable.events import AgentEndEvent, ExtensionUiRequestEvent
+from picable.protocol_types import (
     ConfirmExtensionUiRequest,
     EditorExtensionUiRequest,
     InputExtensionUiRequest,

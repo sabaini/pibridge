@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pibridge import PiClient
+from picable import PiClient
 from tests.integration.conftest import _prompt_and_get_text, bash_execution_context_text, mock_context_key, mock_user_message
 
 pytestmark = pytest.mark.integration
@@ -16,10 +16,10 @@ def mock_context_map() -> dict[str, object]:
     return {
         mock_context_key(
             mock_user_message(
-                bash_execution_context_text("printf 'hello from pibridge'", "hello from pibridge")
+                bash_execution_context_text("printf 'hello from picable'", "hello from picable")
             ),
             mock_user_message("What output did the previous bash command produce? Reply with exactly that text."),
-        ): "hello from pibridge",
+        ): "hello from picable",
         mock_context_key(
             mock_user_message(bash_execution_context_text("printf 'alpha'", "alpha")),
             mock_user_message(bash_execution_context_text("printf 'beta'", "beta")),
@@ -37,11 +37,11 @@ def mock_prompt_map() -> dict[str, object]:
 
 
 def test_bash_and_session_commands(mock_pi_client: PiClient, tmp_path: Path) -> None:
-    result = mock_pi_client.bash("printf 'hello from pibridge'")
-    assert "hello from pibridge" in result.output
+    result = mock_pi_client.bash("printf 'hello from picable'")
+    assert "hello from picable" in result.output
     assert (
         _prompt_and_get_text(mock_pi_client, "What output did the previous bash command produce? Reply with exactly that text.")
-        == "hello from pibridge"
+        == "hello from picable"
     )
     stats = mock_pi_client.get_session_stats()
     assert stats.session_id

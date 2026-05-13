@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import pibridge
+import picable
 
 
 def test_package_import_smoke() -> None:
-    assert pibridge.PiClient is not None
-    assert pibridge.PiClientOptions is not None
+    assert picable.PiClient is not None
+    assert picable.PiClientOptions is not None

@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from pibridge import PiClientOptions
+from picable import PiClientOptions
 
 EXAMPLE_PROVIDER_ENV = "PI_RPC_EXAMPLE_PROVIDER"
 EXAMPLE_MODEL_ENV = "PI_RPC_EXAMPLE_MODEL"

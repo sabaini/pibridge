@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from pibridge.commands import RpcCommand, serialize_command
-from pibridge.events import AutoCompactionEndEvent, AutoCompactionStartEvent, ExtensionUiRequestEvent, MessageUpdateEvent, QueueUpdateEvent, SessionInfoChangedEvent, ThinkingLevelChangedEvent, parse_event
-from pibridge.exceptions import PiCommandError, PiProtocolError
-from pibridge.protocol_types import (
+from picable.commands import RpcCommand, serialize_command
+from picable.events import AutoCompactionEndEvent, AutoCompactionStartEvent, ExtensionUiRequestEvent, MessageUpdateEvent, QueueUpdateEvent, SessionInfoChangedEvent, ThinkingLevelChangedEvent, parse_event
+from picable.exceptions import PiCommandError, PiProtocolError
+from picable.protocol_types import (
     AssistantMessage,
     BashExecutionMessage,
     BranchSummaryMessage,
@@ -30,7 +30,7 @@ from pibridge.protocol_types import (
     serialize_agent_message,
     serialize_extension_ui_response,
 )
-from pibridge.responses import parse_response
+from picable.responses import parse_response
 
 MODEL = {
     "id": "claude-sonnet-4-20250514",

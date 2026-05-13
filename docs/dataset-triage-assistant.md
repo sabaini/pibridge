@@ -7,7 +7,7 @@ Dataset Triage Assistant is a small local Python application that helps a user i
 The app uses:
 
 - `pandas` for deterministic dataset inspection and profiling
-- `pibridge` for conversational analysis and streamed explanations
+- `picable` for conversational analysis and streamed explanations
 - `streamlit` for a lightweight local UI
 
 The core design principle is:
@@ -23,7 +23,7 @@ This makes the example meaningfully more capable than a hello world app while re
 
 Primary goals:
 
-- demonstrate a realistic pibridge application pattern
+- demonstrate a realistic picable application pattern
 - showcase Python library integration, especially `pandas`
 - keep the codebase small enough to serve as reference/example code
 - support interactive follow-up questions in a persistent Pi session
@@ -210,7 +210,7 @@ Rationale:
 
 ### 9.4 Streaming is part of the demo value
 
-The app should use `subscribe_events()` and display response text progressively. A non-streaming implementation would work, but it would under-demonstrate one of the strongest aspects of pibridge.
+The app should use `subscribe_events()` and display response text progressively. A non-streaming implementation would work, but it would under-demonstrate one of the strongest aspects of picable.
 
 ---
 
@@ -423,7 +423,7 @@ class DatasetTriageSession:
         ...
 ```
 
-### Relevant `pibridge` APIs
+### Relevant `picable` APIs
 
 The implementation will primarily use:
 
@@ -692,4 +692,4 @@ Build the MVP as a small Streamlit app with a strict separation between:
 - prompt construction
 - Pi session/streaming integration
 
-This keeps the app easy to understand, showcases pibridge clearly, and leaves a clean path for later additions such as charts or richer profiling while already covering bounded profiling, export, and the recommended follow-up helper.
+This keeps the app easy to understand, showcases picable clearly, and leaves a clean path for later additions such as charts or richer profiling while already covering bounded profiling, export, and the recommended follow-up helper.

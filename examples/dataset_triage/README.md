@@ -1,6 +1,6 @@
 # Dataset Triage Assistant
 
-A small Streamlit app that profiles an uploaded CSV or gzipped CSV (`.csv.gz`) locally with `pandas`, sends a compact bounded summary to Pi through `pibridge`, streams Pi's analysis back into the UI, and keeps follow-up questions in the same Pi session.
+A small Streamlit app that profiles an uploaded CSV or gzipped CSV (`.csv.gz`) locally with `pandas`, sends a compact bounded summary to Pi through `picable`, streams Pi's analysis back into the UI, and keeps follow-up questions in the same Pi session.
 
 ## Prerequisites
 

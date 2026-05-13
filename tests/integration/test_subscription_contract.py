@@ -5,8 +5,8 @@ import time
 
 import pytest
 
-from pibridge import PiClient
-from pibridge.exceptions import PiProcessExitedError, PiProtocolError, PiSubscriptionOverflowError
+from picable import PiClient
+from picable.exceptions import PiProcessExitedError, PiProtocolError, PiSubscriptionOverflowError
 from tests.integration.conftest import _collect_events_until_agent_end
 
 pytestmark = pytest.mark.integration

@@ -20,15 +20,15 @@ install_smoke = _load_install_smoke_module()
 
 
 def test_select_wheel_prefers_newest_build_over_lexicographic_order(tmp_path) -> None:
-    older_newer_version = tmp_path / "pibridge-1.10.0-py3-none-any.whl"
-    stale_lexicographically_later = tmp_path / "pibridge-1.2.0-py3-none-any.whl"
+    older_newer_version = tmp_path / "picable-1.10.0-py3-none-any.whl"
+    stale_lexicographically_later = tmp_path / "picable-1.2.0-py3-none-any.whl"
     older_newer_version.write_text("newer version but older build", encoding="utf-8")
     stale_lexicographically_later.write_text("stale wheel", encoding="utf-8")
 
     install_smoke.os.utime(older_newer_version, ns=(1_000_000_000, 1_000_000_000))
     install_smoke.os.utime(stale_lexicographically_later, ns=(2_000_000_000, 2_000_000_000))
 
-    rebuilt_current_wheel = tmp_path / "pibridge-1.10.0-py3-none-any.whl"
+    rebuilt_current_wheel = tmp_path / "picable-1.10.0-py3-none-any.whl"
     install_smoke.os.utime(rebuilt_current_wheel, ns=(3_000_000_000, 3_000_000_000))
 
     selected = install_smoke.select_built_wheel(tmp_path.glob("*.whl"))

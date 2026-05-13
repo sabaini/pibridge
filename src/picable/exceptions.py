@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 
 class PiError(Exception):
-    """Base exception for pibridge."""
+    """Base exception for picable."""
 
 
 @dataclass(eq=False)

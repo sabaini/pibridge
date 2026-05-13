@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from pibridge import PiClient
-from pibridge.commands import make_command
+from picable import PiClient
+from picable.commands import make_command
 
 pytestmark = pytest.mark.integration
 

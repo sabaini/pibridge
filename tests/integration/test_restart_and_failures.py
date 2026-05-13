@@ -6,8 +6,8 @@ import time
 
 import pytest
 
-from pibridge import PiClient
-from pibridge.exceptions import PiTimeoutError
+from picable import PiClient
+from picable.exceptions import PiTimeoutError
 from tests.integration.conftest import MOCK_MODEL_ID, MOCK_PROVIDER_NAME, _prompt_and_get_text, _wait_for_agent_end
 
 pytestmark = pytest.mark.integration

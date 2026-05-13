@@ -5,9 +5,9 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from pibridge import PiCommandError, PiProcessExitedError, PiProtocolError, PiSubscriptionOverflowError, PiTimeoutError
-from pibridge.events import AgentEndEvent, MessageUpdateEvent, ToolExecutionStartEvent
-from pibridge.protocol_types import AssistantMessage, AssistantMessageEvent, TextContent, Usage, UsageCost
+from picable import PiCommandError, PiProcessExitedError, PiProtocolError, PiSubscriptionOverflowError, PiTimeoutError
+from picable.events import AgentEndEvent, MessageUpdateEvent, ToolExecutionStartEvent
+from picable.protocol_types import AssistantMessage, AssistantMessageEvent, TextContent, Usage, UsageCost
 from tests.example_support import load_dataset_triage_module
 
 runtime_config_module = importlib.import_module("runtime_config")

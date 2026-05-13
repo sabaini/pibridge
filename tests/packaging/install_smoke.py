@@ -22,7 +22,7 @@ import queue
 import tempfile
 from pathlib import Path
 
-from pibridge import PiClient, PiClientOptions
+from picable import PiClient, PiClientOptions
 
 MOCK_PROVIDER_NAME = "pi-rpc-mock"
 MOCK_MODEL_ID = "canned-responses"
@@ -104,8 +104,8 @@ def main() -> None:
     if not MOCK_EXTENSION_PATH.exists():
         raise SystemExit(f"Mock provider fixture not found: {MOCK_EXTENSION_PATH}")
 
-    wheel = select_built_wheel(DIST_DIR.glob("pibridge-*.whl"))
-    with tempfile.TemporaryDirectory(prefix="pibridge-install-smoke-") as temp_root:
+    wheel = select_built_wheel(DIST_DIR.glob("picable-*.whl"))
+    with tempfile.TemporaryDirectory(prefix="picable-install-smoke-") as temp_root:
         temp_path = Path(temp_root)
         venv_dir = temp_path / "venv"
         venv.EnvBuilder(with_pip=True).create(venv_dir)
