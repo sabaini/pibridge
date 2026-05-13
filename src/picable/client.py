@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any, cast
 
 from .commands import RpcCommand, make_command
@@ -20,6 +21,7 @@ from .models import (
 from .process import PiProcess
 from .protocol_types import (
     AgentMessage,
+    AssistantMessage,
     ImageContent,
     ModelInfo,
     QueueMode,
@@ -77,6 +79,45 @@ class PiClient:
         if streaming_behavior is not None:
             fields["streamingBehavior"] = streaming_behavior
         unwrap_response(self.send_command("prompt", timeout=timeout, **fields))
+
+    def prompt_and_wait(
+        self,
+        message: str,
+        *,
+        images: list[ImageContent] | None = None,
+        streaming_behavior: StreamingBehavior | None = None,
+        submit_timeout: float | None = None,
+        wait_timeout: float | None = None,
+        poll_interval: float = 0.5,
+    ) -> None:
+        """Submit a prompt and wait until Pi is idle.
+
+        The Pi RPC prompt command acknowledges enqueue/submission, not completion of
+        the assistant turn. Callers that need the completed response should use this
+        helper before reading messages; otherwise a following prompt can race with the
+        active turn and Pi may reject it as "Agent is already processing".
+        """
+        self.prompt(
+            message,
+            images=images,
+            streaming_behavior=streaming_behavior,
+            timeout=submit_timeout,
+        )
+        self.wait_until_idle(timeout=wait_timeout, poll_interval=poll_interval)
+
+    def wait_until_idle(self, *, timeout: float | None = None, poll_interval: float = 0.5) -> RpcSessionState:
+        """Poll session state until no assistant turn/compaction/pending prompt remains."""
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while True:
+            state = self.get_state(timeout=timeout)
+            if not state.is_streaming and not state.is_compacting and state.pending_message_count == 0:
+                return state
+            if deadline is not None and time.monotonic() >= deadline:
+                from .exceptions import PiTimeoutError
+
+                assert timeout is not None
+                raise PiTimeoutError("wait_until_idle", timeout)
+            time.sleep(poll_interval)
 
     def continue_prompt(self, message: str, *, images: list[ImageContent] | None = None, timeout: float | None = None) -> None:
         self.prompt(message, images=images, streaming_behavior="followUp", timeout=timeout)
@@ -171,7 +212,29 @@ class PiClient:
     def get_last_assistant_text(self, *, timeout: float | None = None) -> str | None:
         result = unwrap_response(self.send_command("get_last_assistant_text", timeout=timeout))
         assert isinstance(result, LastAssistantTextResult)
+        if result.text:
+            return result.text
+
+        # Some Pi versions can transiently report an empty last-assistant-text
+        # even though the assistant message is present in the session transcript.
+        # Fall back to get_messages() and reconstruct the latest assistant text
+        # from text content blocks.
+        for message in reversed(self.get_messages(timeout=timeout)):
+            text = self._assistant_text(message)
+            if text:
+                return text
         return result.text
+
+    @staticmethod
+    def _assistant_text(message: AgentMessage) -> str | None:
+        if not isinstance(message, AssistantMessage):
+            return None
+        parts = []
+        for block in message.content:
+            text = getattr(block, "text", None)
+            if text:
+                parts.append(text)
+        return "\n".join(parts) if parts else None
 
     def set_session_name(self, name: str, *, timeout: float | None = None) -> None:
         unwrap_response(self.send_command("set_session_name", timeout=timeout, name=name))
